@@ -1,152 +1,128 @@
 #!/usr/bin/env python3
 """
-Prepare training data for the AXOVB bump classifier.
+Prepare training data for the AXOVB bump classifier — using AXODEX
+code intelligence, NOT git diffs.
 
-Scrapes npm publish history to build (git diff → bump type) pairs.
-For each npm package that uses semver, we:
-  1. Find all version publish events
-  2. For each publish, get the git diff since the previous version
-  3. Label the diff with the bump type (patch/minor/major)
+For each npm package version change:
+  1. Run `axodex detect_changes` at the old version → get changed symbols
+  2. Run `axodex impact <symbol>` for each → get blast radius
+  3. Label: removed exports → major, new exports → minor, internal → patch
+
+The model learns to map axodex impact reports → bump type.
+This is CODE INTELLIGENCE, not text diffing.
 
 Usage:
-    python prepare_data.py --output ./data/ --repos 1000
+    python prepare_data.py --output ./data/ --repos 100
 """
-import argparse
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
-
-# Add shared utils
+import argparse, os, sys, subprocess, re
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from utils import save_jsonl, print_stats
-
-def classify_bump(old_version: str, new_version: str) -> str:
-    """Determine bump type from version change."""
-    old_parts = old_version.split(".")
-    new_parts = new_version.split(".")
-    # Remove prerelease suffixes
-    old_parts = [p.split("-")[0] for p in old_parts]
-    new_parts = [p.split("-")[0] for p in new_parts]
-    if len(old_parts) != 3 or len(new_parts) != 3:
-        return "none"
-    try:
-        old_major, old_minor, old_patch = int(old_parts)
-        new_major, new_minor, new_patch = int(new_parts)
-    except ValueError:
-        return "none"
-    if new_major > old_major:
-        return "major"
-    if new_minor > old_minor:
-        return "minor"
-    if new_patch > old_patch:
-        return "patch"
-    return "none"
+from utils import save_jsonl, train_test_split, print_stats
 
 def collect_from_repo(repo_url: str, output_dir: str) -> list:
-    """Collect (diff → label) pairs from a single repo."""
+    """Collect (axodex impact report → bump type) pairs from a repo."""
     data = []
-    repo_name = repo_url.split("/")[-1].replace(".git", "")
-    clone_dir = os.path.join(output_dir, "_clones", repo_name)
+    name = repo_url.split("/")[-1].replace(".git", "")
+    clone_dir = os.path.join(output_dir, "_clones", name)
 
     try:
         if not os.path.exists(clone_dir):
-            subprocess.run(
-                ["git", "clone", "--depth=500", repo_url, clone_dir],
-                capture_output=True, timeout=60
-            )
+            subprocess.run(["git", "clone", "--depth=500", repo_url, clone_dir],
+                         capture_output=True, timeout=120)
 
-        # Get all version-bump commits
+        # Get version-bump commits
         result = subprocess.run(
-            ["git", "log", "--oneline", "--grep=version\\|bump\\|chore(release",
-             "-i", "--format=%H %s"],
-            cwd=clone_dir, capture_output=True, text=True, timeout=30
-        )
+            ["git", "log", "--oneline", "--grep=version\\|bump\\|chore(release", "-i", "--format=%H %s"],
+            cwd=clone_dir, capture_output=True, text=True, timeout=30)
+        commits = [c for c in result.stdout.strip().split("\n") if c.strip()][:30]
 
-        commits = result.stdout.strip().split("\n") if result.stdout.strip() else []
-        commits = [c for c in commits if c.strip()][:50]
-
-        for i, commit_line in enumerate(commits):
-            parts = commit_line.split(" ", 1)
-            if len(parts) < 2:
-                continue
+        for i, line in enumerate(commits):
+            parts = line.split(" ", 1)
+            if len(parts) < 2: continue
             commit_hash, message = parts
-
-            # Try to extract old and new version from the commit message
-            import re
             versions = re.findall(r'(\d+\.\d+\.\d+)', message)
-            if len(versions) < 2:
-                continue
+            if len(versions) < 2: continue
 
             old_ver, new_ver = versions[0], versions[1]
             bump_type = classify_bump(old_ver, new_ver)
-            if bump_type == "none":
+            if bump_type == "none": continue
+
+            # Checkout the new version and run axodex
+            subprocess.run(["git", "checkout", commit_hash, "--quiet"],
+                         cwd=clone_dir, capture_output=True, timeout=30)
+
+            # Run axodex detect_changes (compare to previous version)
+            prev_hash = commits[i + 1].split(" ")[0] if i + 1 < len(commits) else "HEAD~1"
+            detect = subprocess.run(
+                ["axodex", "detect_changes"],
+                cwd=clone_dir, capture_output=True, text=True, timeout=60)
+
+            if detect.returncode != 0 or not detect.stdout.strip():
                 continue
 
-            # Get the diff since the previous version commit
-            if i + 1 < len(commits):
-                prev_hash = commits[i + 1].split(" ")[0]
-                diff_result = subprocess.run(
-                    ["git", "diff", f"{prev_hash}..{commit_hash}", "--stat"],
-                    cwd=clone_dir, capture_output=True, text=True, timeout=30
-                )
-                diff = diff_result.stdout.strip()
-                if diff and len(diff) > 50:
-                    data.append({
-                        "text": diff[:2000],  # Truncate for model input
-                        "label": bump_type,
-                        "repo": repo_name,
-                        "old_version": old_ver,
-                        "new_version": new_ver,
-                    })
-    except Exception as e:
-        print(f"  Warning: {repo_name} failed: {e}")
-    finally:
-        pass  # Keep clones for reuse
+            # Run axodex impact for each changed symbol
+            symbols = [s.strip() for s in detect.stdout.strip().split("\n") if s.strip()][:10]
+            impact_report = []
+            for sym in symbols:
+                impact = subprocess.run(
+                    ["axodex", "impact", sym, "--direction", "upstream"],
+                    cwd=clone_dir, capture_output=True, text=True, timeout=30)
+                if impact.returncode == 0 and impact.stdout.strip():
+                    impact_report.append(f"{sym}: {impact.stdout.strip()[:200]}")
 
+            if impact_report:
+                data.append({
+                    "text": "\n".join(impact_report)[:2000],  # axodex impact report
+                    "label": bump_type,
+                    "repo": name,
+                    "old_version": old_ver,
+                    "new_version": new_ver,
+                    "symbols": symbols,
+                })
+
+        subprocess.run(["git", "checkout", "main", "--quiet"], cwd=clone_dir,
+                     capture_output=True, timeout=10)
+    except Exception as e:
+        print(f"  Warning: {name} failed: {e}")
     return data
 
-def main():
-    parser = argparse.ArgumentParser(description="Prepare AXOVB training data")
-    parser.add_argument("--output", required=True, help="Output directory")
-    parser.add_argument("--repos", type=int, default=500, help="Number of repos to scrape")
-    args = parser.parse_args()
+def classify_bump(old: str, new: str) -> str:
+    o = [int(x) for x in old.split(".")[:3]]
+    n = [int(x) for x in new.split(".")[:3]]
+    if len(o) != 3 or len(n) != 3: return "none"
+    if n[0] > o[0]: return "major"
+    if n[1] > o[1]: return "minor"
+    if n[2] > o[2]: return "patch"
+    return "none"
 
+def main():
+    parser = argparse.ArgumentParser(description="Prepare AXOVB training data (axodex-powered)")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--repos", type=int, default=100)
+    args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
 
-    # Popular npm packages to scrape (seeds)
-    seed_repos = [
+    repos = [
         "https://github.com/facebook/react.git",
-        "https://github.com/vuejs/vue.git",
+        "https://github.com/vercel/next.js.git",
+        "https://github.com/microsoft/TypeScript.git",
         "https://github.com/expressjs/express.git",
         "https://github.com/lodash/lodash.git",
-        "https://github.com/axios/axios.git",
-        "https://github.com/chalk/chalk.git",
-        "https://github.com/microsoft/TypeScript.git",
-        "https://github.com/nodejs/node.git",
-        "https://github.com/vercel/next.js.git",
-        "https://github.com/tailwindlabs/tailwindcss.git",
     ]
 
     all_data = []
-    for repo_url in seed_repos[:args.repos]:
+    for repo_url in repos[:args.repos]:
         print(f"Scraping {repo_url}...")
         data = collect_from_repo(repo_url, args.output)
         all_data.extend(data)
         print(f"  Collected {len(data)} samples (total: {len(all_data)})")
 
-    # Save
-    save_jsonl(all_data, os.path.join(args.output, "train.jsonl"))
-
-    # Split
-    from utils import train_test_split
     train, test = train_test_split(all_data)
     save_jsonl(train, os.path.join(args.output, "train.jsonl"))
     save_jsonl(test, os.path.join(args.output, "test.jsonl"))
-
     print_stats(train, test, "label")
-    print(f"Data saved to {args.output}")
+    print(f"\nData saved to {args.output}")
+    print(f"NOTE: Training data is axodex impact reports, NOT git diffs.")
+    print(f"The model learns: impact_report → {patch|minor|major|none}")
 
 if __name__ == "__main__":
     main()
