@@ -36,7 +36,7 @@ def main():
     train, test = train_test_split(hf_data)
     train_ds = Dataset.from_list(train)
     test_ds = Dataset.from_list(test)
-    print_stats(train, test, "labels")
+    print(f"Train: {len(train)}, Test: {len(test)}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, is_split_into_words=True)
 
