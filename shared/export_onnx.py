@@ -1,76 +1,73 @@
 #!/usr/bin/env python3
 """
-Export a HuggingFace model to ONNX format for use with
-@huggingface/transformers in Node.js.
+Export a HuggingFace model to ONNX format using torch.onnx.export(dynamo=False).
+Unpacks tokenizer BatchEncoding into individual tensors.
 
 Usage:
-    python export_onnx.py --model ./fine-tuned-model/ --output ./onnx/ --task text-classification
+    python export_onnx.py --model ./model/ --output ./onnx/ --task text-classification
 """
-import argparse
-import os
-import sys
+import argparse, os, sys
 
 def export_to_onnx(model_path: str, output_dir: str, task: str = "text-classification"):
-    """Export a HuggingFace model to ONNX format."""
-    from transformers import AutoTokenizer, AutoModelForSequenceClassification
-    from optimum.onnxruntime import ORTModelForSequenceClassification
     import torch
-
+    from transformers import AutoTokenizer
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Loading model from {model_path}...")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    # Create dummy input
+    dummy = tokenizer("sample text", return_tensors="pt", padding="max_length", max_length=512, truncation=True)
+    input_ids = dummy["input_ids"]
+    attention_mask = dummy["attention_mask"]
+    input_names = ["input_ids", "attention_mask"]
+    dummy_inputs = (input_ids, attention_mask)
 
     if task == "text-classification":
+        from transformers import AutoModelForSequenceClassification
         model = AutoModelForSequenceClassification.from_pretrained(model_path)
-        ort_model = ORTModelForSequenceClassification.from_pretrained(
-            model_path, export=True
-        )
-    elif task == "text2text-generation":
-        from transformers import AutoModelForSeq2SeqLM
-        from optimum.onnxruntime import ORTModelForSeq2SeqLM
-        model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
-        ort_model = ORTModelForSeq2SeqLM.from_pretrained(model_path, export=True)
     elif task == "token-classification":
         from transformers import AutoModelForTokenClassification
-        from optimum.onnxruntime import ORTModelForTokenClassification
         model = AutoModelForTokenClassification.from_pretrained(model_path)
-        ort_model = ORTModelForTokenClassification.from_pretrained(model_path, export=True)
+    elif task == "text2text-generation":
+        from transformers import AutoModelForSeq2SeqLM
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     else:
-        print(f"Unsupported task: {task}")
-        sys.exit(1)
+        print(f"Unsupported task: {task}"); sys.exit(1)
 
-    print(f"Saving ONNX model to {output_dir}...")
-    ort_model.save_pretrained(output_dir)
+    model.eval()
+    onnx_path = os.path.join(output_dir, "model.onnx")
+    print(f"Exporting to {onnx_path} (dynamo=False)...")
+    try:
+        torch.onnx.export(
+            model, dummy_inputs, onnx_path,
+            input_names=input_names, output_names=["logits"],
+            dynamo=False, opset_version=17,
+        )
+    except TypeError:
+        # Fallback for older torch versions without dynamo param
+        torch.onnx.export(model, dummy_inputs, onnx_path,
+            input_names=input_names, output_names=["logits"], opset_version=17)
+
     tokenizer.save_pretrained(output_dir)
-
-    # Also save a config.json that specifies the task
     import json
     config = {
-        "task": task,
-        "model_type": model.config.model_type,
+        "task": task, "model_type": model.config.model_type,
         "max_length": getattr(model.config, "max_position_embeddings", 512),
+        "id2label": dict(model.config.id2label) if hasattr(model.config, "id2label") else {},
+        "label2id": dict(model.config.label2id) if hasattr(model.config, "label2id") else {},
     }
     with open(os.path.join(output_dir, "axodex_config.json"), 'w') as f:
         json.dump(config, f, indent=2)
 
-    # Report file size
-    total_size = 0
-    for root, dirs, files in os.walk(output_dir):
-        for file in files:
-            total_size += os.path.getsize(os.path.join(root, file))
-    print(f"\nExport complete!")
-    print(f"  Output: {output_dir}")
-    print(f"  Size: {total_size / 1024 / 1024:.1f} MB")
-    print(f"  Task: {task}")
-    print(f"\nTo use with AXOVB/AXOTEST:")
-    print(f"  --model-path {output_dir}")
+    total = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(output_dir) for f in fs)
+    print(f"\nExport complete! Size: {total/1024/1024:.1f} MB")
+    print(f"Use with: --model-path {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Export model to ONNX")
-    parser.add_argument("--model", required=True, help="Path to fine-tuned model")
-    parser.add_argument("--output", required=True, help="Output directory for ONNX")
-    parser.add_argument("--task", default="text-classification",
-                       choices=["text-classification", "text2text-generation", "token-classification"])
-    args = parser.parse_args()
-    export_to_onnx(args.model, args.output, args.task)
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", required=True)
+    p.add_argument("--output", required=True)
+    p.add_argument("--task", default="text-classification",
+                   choices=["text-classification", "text2text-generation", "token-classification"])
+    a = p.parse_args()
+    export_to_onnx(a.model, a.output, a.task)

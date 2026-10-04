@@ -67,7 +67,7 @@ def main():
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         learning_rate=args.lr,
-        warmup_ratio=0.1,
+        warmup_steps=10,
         weight_decay=0.01,
         eval_strategy="epoch",
         save_strategy="epoch",
@@ -78,8 +78,8 @@ def main():
     trainer = Trainer(
         model=model, args=training_args,
         train_dataset=train_ds, eval_dataset=test_ds,
-        tokenizer=tokenizer,
-        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model),
+        processing_class=tokenizer,
+        data_collator=DataCollatorForSeq2Seq(processing_class=tokenizer, model=model),
     )
 
     print(f"\nTraining {args.base_model} for {args.epochs} epochs...")

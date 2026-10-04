@@ -83,13 +83,13 @@ def main():
         output_dir=args.output, num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
-        learning_rate=args.lr, warmup_ratio=0.1, weight_decay=0.01,
+        learning_rate=args.lr, warmup_steps=10, weight_decay=0.01,
         eval_strategy="epoch", save_strategy="epoch",
         load_best_model_at_end=True, metric_for_best_model="f1", report_to="none")
 
     trainer = Trainer(model=model, args=training_args,
         train_dataset=train_ds, eval_dataset=test_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=DataCollatorForTokenClassification(tokenizer),
         compute_metrics=compute_metrics)
 
