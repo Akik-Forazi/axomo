@@ -7,7 +7,7 @@ Ultra-low-memory training of distilgpt2 explainer — for 4GB RAM environments.
 - Captures full loss + perplexity curves and sample generations.
 """
 import argparse, os, sys, json, time
-sys.path.insert(0, '/home/z/my-project/axomo/shared')
+sys.path.insert(0, 'C:/Users/user/akik/programing/axomo/shared')
 from utils import load_jsonl
 
 def main():
@@ -15,11 +15,11 @@ def main():
     parser.add_argument("--data", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--base-model", default="distilgpt2")
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=2)
+    parser.add_argument("--epochs", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=24)
     parser.add_argument("--grad-accum", type=int, default=8)
     parser.add_argument("--lr", type=float, default=5e-5)
-    parser.add_argument("--max-length", type=int, default=64)
+    parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--limit", type=int, default=200)
     args = parser.parse_args()
 

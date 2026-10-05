@@ -12,8 +12,8 @@ Tests run:
 import json, os, sys, time, subprocess, tempfile, shutil
 from pathlib import Path
 
-ROOT = Path('/home/z/my-project/axomo')
-PYTHON = '/home/z/.venv/bin/python3'
+ROOT = Path('C:/Users/user/akik/programing/axomo')
+PYTHON = 'python'
 
 results = {
     "run_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
