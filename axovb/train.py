@@ -77,7 +77,7 @@ def main():
             super().__init__()
             self.fc1 = nn.Linear(input_dim, hidden1)
             self.fc2 = nn.Linear(hidden1, hidden2)
-        self.fc2b = nn.Linear(hidden2, 64)
+            self.fc2b = nn.Linear(hidden2, 64)
             self.fc3 = nn.Linear(64, num_classes)
             self.relu = nn.ReLU()
 
