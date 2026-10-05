@@ -55,6 +55,70 @@ FEATURE_NAMES = [
 LABEL2ID = {"none": 0, "patch": 1, "minor": 2, "major": 3}
 ID2LABEL = {v: k for k, v in LABEL2ID.items()}
 
+# ONNX export (the correct deployment format — not JSON)
+
+def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2label, temperature):
+    """Export the trained MLP to ONNX format for onnxruntime-node."""
+    import torch
+    onnx_path = os.path.join(output_dir, "bump_mlp.onnx")
+    
+    # Create a wrapper that includes normalization + temperature scaling
+    class BumpMLPInference(torch.nn.Module):
+        def __init__(self, mlp, X_min, X_max, temperature):
+            super().__init__()
+            self.mlp = mlp
+            self.register_buffer("X_min", torch.FloatTensor(X_min))
+            self.register_buffer("X_max", torch.FloatTensor(X_max))
+            self.temperature = temperature
+            
+        def forward(self, x):
+            # Normalize input
+            x = (x - self.X_min) / torch.clamp(self.X_max - self.X_min, min=1.0)
+            # Forward through MLP
+            logits = self.mlp(x)
+            # Apply temperature scaling
+            logits = logits / self.temperature
+            # Softmax
+            probs = torch.softmax(logits, dim=-1)
+            return probs
+    
+    inference_model = BumpMLPInference(model, X_min, X_max, temperature)
+    inference_model.eval()
+    
+    # Export with dynamic batch size
+    dummy_input = torch.randn(1, len(feature_names))
+    torch.onnx.export(
+        inference_model,
+        dummy_input,
+        onnx_path,
+        input_names=["features"],
+        output_names=["probabilities"],
+        dynamic_axes={"features": {0: "batch_size"}, "probabilities": {0: "batch_size"}},
+        dynamo=False,
+        opset_version=17,
+    )
+    
+    # Save metadata alongside the ONNX file
+    import json
+    with open(os.path.join(output_dir, "metadata.json"), 'w') as f:
+        json.dump({
+            "feature_names": feature_names,
+            "feature_min": X_min.tolist(),
+            "feature_max": X_max.tolist(),
+            "label2id": label2id,
+            "id2label": id2label,
+            "temperature": temperature,
+            "model_type": "bump_mlp_onnx",
+            "input_shape": [1, len(feature_names)],
+            "output_shape": [1, 4],
+        }, f, indent=2)
+    
+    onnx_size = os.path.getsize(onnx_path)
+    print(f"\n  ONNX model: {onnx_path}")
+    print(f"  ONNX size:  {onnx_size // 1024} KB ({onnx_size / 1024 / 1024:.1f} MB)")
+    print(f"  Load in Node.js: const {''}= require('onnxruntime-node').InferenceSession.create(onnxPath)")
+
+# Call ONNX export after saving the PyTorch checkpoint
 def main():
     parser = argparse.ArgumentParser(description="Train AXOVB PEAK MLP (2.8M params)")
     parser.add_argument("--data", required=True)
@@ -262,36 +326,17 @@ def main():
         },
     }, os.path.join(args.output, "bump_mlp.pt"))
 
-    # Save as JSON for Node.js runtime (no PyTorch at inference)
-    weights = {}
-    for name, param in model.named_parameters():
-        weights[name] = param.detach().numpy().tolist()
-    # Also save batchnorm running stats
-    for name, buf in model.named_buffers():
-        weights[name] = buf.detach().numpy().tolist()
 
-    with open(os.path.join(args.output, "bump_mlp.json"), 'w') as f:
-        json.dump({
-            "weights": weights,
-            "feature_names": FEATURE_NAMES,
-            "feature_min": X_min.tolist(),
-            "feature_max": X_max.tolist(),
-            "label2id": LABEL2ID,
-            "id2label": ID2LABEL,
-            "temperature": temperature.item(),
-            "model_config": {
-                "input_dim": len(FEATURE_NAMES),
-                "hidden_sizes": [2048, 1024, 512, 256],
-                "num_classes": 4,
-                "dropout": 0.3,
-            },
-        }, f)
+    # Export to ONNX (the correct deployment format)
+    print(f"\nExporting to ONNX...")
+    export_onnx(model, args.output, FEATURE_NAMES, X_min, X_max, LABEL2ID, ID2LABEL, temperature.item())
 
     print(f"\nModel saved to {args.output}")
-    print(f"  bump_mlp.pt   (PyTorch, {os.path.getsize(os.path.join(args.output, 'bump_mlp.pt'))//1024} KB)")
-    json_size = os.path.getsize(os.path.join(args.output, 'bump_mlp.json'))
-    print(f"  bump_mlp.json (Node.js runtime, {json_size//1024} KB)")
-    print(f"\n  No PyTorch needed at inference — just load JSON + matrix multiply")
+    print(f"  bump_mlp.pt  (PyTorch, for re-training)")
+    print(f"  bump_mlp.onnx (ONNX, for onnxruntime-node inference)")
+    print(f"  metadata.json (feature names, normalizer, labels)")
 
 if __name__ == "__main__":
     main()
+
+
