@@ -1,0 +1,86 @@
+{
+  "run_at": "2026-10-05T05:52:02",
+  "python": "/home/z/.venv/bin/python3",
+  "tests": [
+    {
+      "name": "PEAK MLP bumper (ONNX inference)",
+      "status": "pass",
+      "duration_ms": 232.19,
+      "summary": "ONNX inference on 75 test samples: 100.0% accuracy in 3.5ms total",
+      "error": null,
+      "details": {
+        "accuracy_pct": 100.0,
+        "total_inference_ms": 3.5,
+        "samples": 75
+      }
+    },
+    {
+      "name": "distilgpt2 explainer (text generation)",
+      "status": "pass",
+      "duration_ms": 13388.37,
+      "summary": "Generated 4 explanations in 4436ms (avg 1109ms each)",
+      "error": null,
+      "details": {
+        "generations": [
+          {
+            "prompt": "Features: {\"num_changed_symbols\": 5, \"num_callers_affected\": 15, \"has_removed_ex",
+            "response": "Bump: Minor"
+          },
+          {
+            "prompt": "Features: {\"num_changed_symbols\": 3, \"num_callers_affected\": 0, \"has_removed_exp",
+            "response": "The following changes are added:"
+          },
+          {
+            "prompt": "Features: {\"num_changed_symbols\": 2, \"num_callers_affected\": 5, \"has_removed_exp",
+            "response": "The following are the major changes to the versioning mechanism.\n\n\n1.0.0\n\n\nThe bug fixes are:\n\n1.0.0\n1.1.1.1\n1.1"
+          },
+          {
+            "prompt": "Features: {\"num_changed_symbols\": 0, \"num_callers_affected\": 0, \"has_removed_exp",
+            "response": "Update 1.7.0.0.0"
+          }
+        ],
+        "total_ms": 4435.644149780273
+      }
+    },
+    {
+      "name": "axomo_bump end-to-end (preview)",
+      "status": "pass",
+      "duration_ms": 47.53,
+      "summary": "axomo_bump preview: detected 15 files to bump to 2.0.0",
+      "error": null,
+      "details": {
+        "files_affected": 15,
+        "target_version": "2.0.0",
+        "preview_lines": 61
+      }
+    },
+    {
+      "name": "axomo_wtf_demo (full pipeline)",
+      "status": "pass",
+      "duration_ms": 11795.92,
+      "summary": "bump=MAJOR @ 100.0%, 4 sec, 5 edge, 22 callers, 10 failing tests, 3 gen tests, total=1.68s",
+      "error": null,
+      "details": {
+        "sections": [
+          "BUMP DECISION",
+          "NARRATIVE",
+          "DISTILGPT2 ALSO WROTE",
+          "SECURITY SMOKES",
+          "FORGOTTEN EDGE CASES",
+          "BLAST RADIUS",
+          "PREDICTED FAILING TESTS",
+          "GENERATED TESTS"
+        ],
+        "bump_predicted": "MAJOR",
+        "confidence_pct": 100.0,
+        "security_findings": 4,
+        "edge_findings": 5,
+        "blast_radius": 22,
+        "predicted_failing_tests": 10,
+        "generated_tests": 3,
+        "total_seconds": 1.68
+      }
+    }
+  ],
+  "summary": "4/4 tests passed"
+}

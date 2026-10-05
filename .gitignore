@@ -1,0 +1,50 @@
+# AXOMO .gitignore
+
+# Large model weights — too big for GitHub (>100MB)
+# Regenerable from axovb/data/*.jsonl + scripts/train_explainer_lomem.py
+axovb/explainer/model.safetensors
+axovb/explainer/model.bin
+axovb/explainer/pytorch_model.bin
+
+# Nested demo repo's own .git directory
+demo-monorepo/.git/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.tox/
+.coverage
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.tar.gz
+*.zip
+
+# Cloned source repos for training data
+axovb/data/_clones/
+axotest-*/data/_clones/
+
+# Temp files
+*.tmp
+*.bak
+.cache/

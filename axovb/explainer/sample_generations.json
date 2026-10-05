@@ -1,0 +1,18 @@
+[
+  {
+    "prompt": "Features: {\"num_changed_symbols\": 5, \"num_callers_affected\": 15, \"has_removed_exports\": 1, \"has_new_exports\": 0}\nBump: major\nExplanation:",
+    "response": "the following changes have been made:"
+  },
+  {
+    "prompt": "Features: {\"num_changed_symbols\": 3, \"num_callers_affected\": 0, \"has_removed_exports\": 0, \"has_new_exports\": 1}\nBump: minor\nExplanation:",
+    "response": "The Bump is a small and trivial change in the Bump.\nThe Bump contains a new version of the Bump that makes it easy to use. This is the easiest way to fix it with the Bump.\nThe"
+  },
+  {
+    "prompt": "Features: {\"num_changed_symbols\": 2, \"num_callers_affected\": 5, \"has_removed_exports\": 0, \"has_new_exports\": 0}\nBump: patch\nExplanation:",
+    "response": "The following are the changes that will be added to the stable API:\nA bug affecting the API's version number is now defined:\n1.1.1.1.1.1.0.1.1."
+  },
+  {
+    "prompt": "Features: {\"num_changed_symbols\": 0, \"num_callers_affected\": 0, \"has_removed_exports\": 0, \"has_new_exports\": 0, \"num_doc_files\": 3}\nBump: none\nExplanation:",
+    "response": "This release is not supported yet for the upcoming release of Bump."
+  }
+]

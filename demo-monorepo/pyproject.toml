@@ -1,0 +1,4 @@
+[project]
+name = "axomo-py"
+version = "1.4.2"
+description = "Python bindings for the axomo CLI"

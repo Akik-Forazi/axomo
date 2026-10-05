@@ -1,0 +1,6 @@
+{
+  "name": "axomo-monorepo-demo",
+  "version": "1.4.2",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"]
+}

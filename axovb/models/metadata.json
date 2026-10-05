@@ -1,0 +1,90 @@
+{
+  "feature_names": [
+    "num_changed_symbols",
+    "num_callers_affected",
+    "has_removed_exports",
+    "has_new_exports",
+    "has_exported_changes",
+    "has_signature_changes",
+    "has_type_changes",
+    "has_rename",
+    "num_source_files",
+    "num_test_files",
+    "num_doc_files",
+    "num_config_files",
+    "total_files",
+    "test_to_source_ratio",
+    "blast_radius",
+    "change_scope",
+    "avg_callers_per_symbol",
+    "export_change_ratio",
+    "breaking_score",
+    "complexity_score"
+  ],
+  "feature_min": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "feature_max": [
+    30.0,
+    100.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0,
+    15.0,
+    5.0,
+    5.0,
+    3.0,
+    21.0,
+    3.0,
+    100.0,
+    30.0,
+    10.0,
+    1.0,
+    6.0,
+    0.949999988079071
+  ],
+  "label2id": {
+    "none": 0,
+    "patch": 1,
+    "minor": 2,
+    "major": 3
+  },
+  "id2label": {
+    "0": "none",
+    "1": "patch",
+    "2": "minor",
+    "3": "major"
+  },
+  "temperature": 0.08568006008863449,
+  "model_type": "bump_mlp_onnx",
+  "input_shape": [
+    1,
+    20
+  ],
+  "output_shape": [
+    1,
+    4
+  ]
+}
