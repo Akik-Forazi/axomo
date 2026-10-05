@@ -8,9 +8,9 @@ multi-layer perceptron instead of DistilBERT (66M).
 Architecture:
   Input: 14 features (num_changed_symbols, num_callers, has_removed,
          has_new, has_signature, file counts, ratios, etc.)
-  Layer 1: 14 → 64 (ReLU)
-  Layer 2: 64 → 32 (ReLU)
-  Layer 3: 32 → 4 (softmax)
+  Layer 1: 14 → 256 (ReLU)
+  Layer 2: 256 → 128 (ReLU) → 64 (ReLU)
+  Layer 3: 64 → 4 (softmax)
   Total params: ~3,500 (not 66M)
   Model size: ~14KB (not 256MB)
   Inference: ~0.1ms (not 32ms)
@@ -73,24 +73,26 @@ def main():
 
     # Build tiny MLP
     class BumpMLP(nn.Module):
-        def __init__(self, input_dim=14, hidden1=64, hidden2=32, num_classes=4):
+        def __init__(self, input_dim=14, hidden1=256, hidden2=128, num_classes=4):
             super().__init__()
             self.fc1 = nn.Linear(input_dim, hidden1)
             self.fc2 = nn.Linear(hidden1, hidden2)
-            self.fc3 = nn.Linear(hidden2, num_classes)
+        self.fc2b = nn.Linear(hidden2, 64)
+            self.fc3 = nn.Linear(64, num_classes)
             self.relu = nn.ReLU()
 
         def forward(self, x):
             x = self.relu(self.fc1(x))
             x = self.relu(self.fc2(x))
+            x = self.relu(self.fc2b(x))
             return self.fc3(x)
 
     model = BumpMLP()
     total_params = sum(p.numel() for p in model.parameters())
     print(f"\nModel: BumpMLP ({total_params} params)")
     print(f"  Layer 1: {len(FEATURE_NAMES)} → 64 (ReLU)")
-    print(f"  Layer 2: 64 → 32 (ReLU)")
-    print(f"  Layer 3: 32 → 4 (softmax)")
+    print(f"  Layer 2: 256 → 128 (ReLU) → 64 (ReLU)")
+    print(f"  Layer 3: 64 → 4 (softmax)")
     print(f"  Total params: {total_params}")
     print(f"  Model size: ~{total_params * 4 / 1024:.1f} KB")
 
@@ -155,7 +157,7 @@ def main():
         "feature_max": X_max.tolist(),
         "label2id": LABEL2ID,
         "id2label": ID2LABEL,
-        "model_config": {"input_dim": len(FEATURE_NAMES), "hidden1": 64, "hidden2": 32, "num_classes": 4},
+        "model_config": {"input_dim": len(FEATURE_NAMES), "hidden1": 256, "hidden2": 128, "num_classes": 4},
     }, os.path.join(args.output, "bump_mlp.pt"))
 
     # Also save as JSON for the Node.js runtime (no PyTorch needed at inference)
