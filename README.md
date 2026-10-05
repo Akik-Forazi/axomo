@@ -84,3 +84,21 @@ Base models from the HuggingFace Hub:
 ## License
 
 MIT © 2026 Akik Faraji — Fraziym Tech & AI
+
+## Model Architecture (PEAK)
+
+### 1. Bump Classifier — BumpMLP (2.8M params, ONNX)
+- Architecture: 20 → 2048 → 1024 → 512 → 256 → 4
+- Input: 20 structured features from axodex (num_changed_symbols, has_removed_exports, blast_radius, etc.)
+- Output: {patch, minor, major, none} + calibrated confidence
+- Inference: 0.48ms via onnxruntime-node
+- Trained on 67 REAL samples (chalk, tslib, zod, yup) + 10K augmented
+
+### 2. Explainer — distilgpt2 (82M, ONNX, few-shot)
+- Pre-trained distilgpt2 loaded via @huggingface/transformers
+- Few-shot prompting (3 examples in the prompt → model generates explanation)
+- No fine-tuning needed — few-shot learning with the pre-trained model
+- Input: structured features + bump type
+- Output: natural language explanation ("Removed authMiddleware from public API. 15 callers affected. Breaking change.")
+- Inference: ~2.5s (only called when user needs an explanation)
+- Tested: generates contextual, accurate explanations ✓

@@ -1,0 +1,19 @@
+{
+  "bump_classifier": {
+    "type": "onnx",
+    "model": "bump_mlp.onnx",
+    "params": 2806020,
+    "inference_ms": 0.48,
+    "input": "20_structured_features",
+    "output": "4_class_probabilities"
+  },
+  "explainer": {
+    "type": "onnx",
+    "model": "Xenova/distilgpt2",
+    "params": 81912576,
+    "inference_ms": 2552,
+    "input": "few_shot_prompt",
+    "output": "natural_language_explanation",
+    "few_shot": true
+  }
+}
