@@ -1,19 +1,106 @@
 {
-  "bump_classifier": {
+  "version": "0.3.0",
+  "package": "axovb",
+  "bumper_classifier": {
+    "name": "PEAK MLP",
     "type": "onnx",
-    "model": "bump_mlp.onnx",
+    "model_file": "models/bump_mlp.onnx",
+    "pytorch_checkpoint": "models/bump_mlp.pt",
+    "metadata": "models/metadata.json",
     "params": 2806020,
-    "inference_ms": 0.48,
-    "input": "20_structured_features",
-    "output": "4_class_probabilities"
+    "params_human": "2.8M",
+    "size_mb": 10.7,
+    "architecture": "20 -> 2048 -> 1024 -> 512 -> 256 -> 4 (BatchNorm + Dropout(0.3) + ReLU)",
+    "training": {
+      "epochs": 80,
+      "early_stopping_patience": 15,
+      "batch_size": 32,
+      "optimizer": "AdamW (lr=5e-4, weight_decay=0.01)",
+      "scheduler": "CosineAnnealingLR",
+      "train_samples": 425,
+      "test_samples": 75,
+      "train_accuracy_pct": 100.0,
+      "test_accuracy_pct": 100.0,
+      "temperature_calibration": 0.086
+    },
+    "inference_ms": 0.05,
+    "inference_throughput_samples_per_sec": 21770,
+    "input": "20_structured_features (extracted from git diff)",
+    "output": "4_class_probabilities [none, patch, minor, major]",
+    "feature_names": [
+      "num_changed_symbols", "num_callers_affected", "has_removed_exports", "has_new_exports",
+      "has_exported_changes", "has_signature_changes", "has_type_changes", "has_rename",
+      "num_source_files", "num_test_files", "num_doc_files", "num_config_files",
+      "total_files", "test_to_source_ratio", "blast_radius", "change_scope",
+      "avg_callers_per_symbol", "export_change_ratio", "breaking_score", "complexity_score"
+    ]
   },
   "explainer": {
-    "type": "onnx",
-    "model": "Xenova/distilgpt2",
+    "name": "distilgpt2 (fine-tuned)",
+    "type": "pytorch",
+    "base_model": "distilgpt2",
+    "model_dir": "explainer/",
+    "config_file": "explainer/config.json",
+    "weights_file": "explainer/model.safetensors (gitignored — regenerable via scripts/train_explainer_lomem.py)",
+    "tokenizer_file": "explainer/tokenizer.json",
+    "metrics_file": "explainer/training_metrics.json",
+    "samples_file": "explainer/sample_generations.json",
     "params": 81912576,
-    "inference_ms": 2552,
-    "input": "few_shot_prompt",
-    "output": "natural_language_explanation",
-    "few_shot": true
+    "params_human": "82M",
+    "size_mb": 312,
+    "training": {
+      "epochs": 1,
+      "batch_size": 2,
+      "grad_accum": 8,
+      "effective_batch_size": 16,
+      "max_length": 64,
+      "gradient_checkpointing": true,
+      "train_samples": 180,
+      "test_samples": 20,
+      "train_time_seconds": 68,
+      "peak_train_loss": 2.556,
+      "final_train_loss": 0.899,
+      "peak_eval_loss": 1.618,
+      "final_eval_loss": 0.763,
+      "peak_perplexity": 5.04,
+      "final_perplexity": 2.15
+    },
+    "inference_ms_warm": 1100,
+    "input": "structured features + predicted bump type",
+    "output": "natural language explanation (1-3 sentences)",
+    "fallback": "rule-based principal-engineer narrative (always coherent)"
+  },
+  "data_artifacts": {
+    "bumper_train": "data/train.jsonl (425 samples, 160 KB)",
+    "bumper_test": "data/test.jsonl (75 samples, 32 KB)",
+    "explainer_train": "data/explainer_train.jsonl (1700 samples, 1.5 MB)",
+    "explainer_test": "data/explainer_test.jsonl (300 samples, 272 KB)",
+    "regenerable": false,
+    "note": "These .jsonl files are the parsed training data. Do NOT re-parse — they are preserved in the git repo so the models can be retrained from them at any time."
+  },
+  "supported_ecosystems": [
+    "node (package.json + lerna.json + workspace packages)",
+    "python (pyproject.toml + setup.py)",
+    "rust (Cargo.toml)",
+    "helm (Chart.yaml — bumps both version + appVersion)",
+    "elixir (mix.exs)",
+    "go (go.mod // Version comment)",
+    "dotnet (*.csproj — Version + AssemblyVersion + FileVersion)",
+    "plain (VERSION file)",
+    "meta (CHANGELOG.md — prepends new release section)"
+  ],
+  "cli": {
+    "entry_point": "python -m axovb",
+    "subcommands": ["predict", "apply", "auto", "eval", "info", "list"],
+    "examples": [
+      "python -m axovb predict",
+      "python -m axovb predict --diff pr.patch --explain",
+      "python -m axovb apply --major --commit --tag",
+      "python -m axovb apply --to 3.0.0 --commit --tag --push",
+      "python -m axovb auto --commit --tag",
+      "python -m axovb eval",
+      "python -m axovb info",
+      "python -m axovb list"
+    ]
   }
 }

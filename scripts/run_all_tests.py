@@ -154,6 +154,57 @@ def test_wtf_demo():
     }
 
 
+def test_axovb_cli():
+    """Test the new `python -m axovb` CLI surface — info, list, eval."""
+    import re
+    # Test 1: axovb info
+    r = subprocess.run(
+        [PYTHON, "-m", "axovb", "info"],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"axovb info exit {r.returncode}: {r.stderr[:500]}")
+    info_clean = re.sub(r'\033\[\d+m', '', r.stdout)
+    has_bumper = "BUMPER MLP" in info_clean
+    has_explainer = "EXPLAINER" in info_clean
+
+    # Test 2: axovb list on demo-monorepo
+    r2 = subprocess.run(
+        [PYTHON, "-m", "axovb", "list", "--root", str(ROOT / "demo-monorepo")],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+    )
+    if r2.returncode != 0:
+        raise RuntimeError(f"axovb list exit {r2.returncode}: {r2.stderr[:500]}")
+    list_clean = re.sub(r'\033\[\d+m', '', r2.stdout)
+    m = re.search(r'(\d+)\s+file\(s\)\s+detected', list_clean)
+    n_files = int(m.group(1)) if m else 0
+    # Count ecosystem headers
+    ecosystems = set(re.findall(r'^\s*([A-Z]+)$', list_clean, re.M))
+
+    # Test 3: axovb eval
+    r3 = subprocess.run(
+        [PYTHON, "-m", "axovb", "eval"],
+        cwd=str(ROOT), capture_output=True, text=True, timeout=60,
+    )
+    if r3.returncode != 0:
+        raise RuntimeError(f"axovb eval exit {r3.returncode}: {r3.stderr[:500]}")
+    eval_clean = re.sub(r'\033\[\d+m', '', r3.stdout)
+    m = re.search(r'Accuracy:\s+([\d.]+)%', eval_clean)
+    acc = float(m.group(1)) if m else 0
+    summary = (
+        f"axovb CLI: info={'OK' if has_bumper and has_explainer else 'FAIL'}, "
+        f"list={n_files} files in {len(ecosystems)} ecosystems, "
+        f"eval={acc:.1f}% accuracy"
+    )
+    return summary, {
+        "info_has_bumper": has_bumper,
+        "info_has_explainer": has_explainer,
+        "list_files_detected": n_files,
+        "list_ecosystems": sorted(ecosystems),
+        "eval_accuracy_pct": acc,
+    }
+
+
 if __name__ == "__main__":
     print(f"\n  AXOMO UNIFIED TEST RUNNER")
     print(f"  python: {PYTHON}")
@@ -164,6 +215,7 @@ if __name__ == "__main__":
     passes.append(run_test("distilgpt2 explainer (text generation)", test_explainer))
     passes.append(run_test("axomo_bump end-to-end (preview)", test_axomo_bump))
     passes.append(run_test("axomo_wtf_demo (full pipeline)", test_wtf_demo))
+    passes.append(run_test("axovb CLI (info/list/eval)", test_axovb_cli))
 
     n_pass = sum(passes)
     n_total = len(passes)

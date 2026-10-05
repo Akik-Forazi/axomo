@@ -1,11 +1,11 @@
 {
-  "run_at": "2026-10-05T05:52:02",
+  "run_at": "2026-10-05T06:23:13",
   "python": "/home/z/.venv/bin/python3",
   "tests": [
     {
       "name": "PEAK MLP bumper (ONNX inference)",
       "status": "pass",
-      "duration_ms": 232.19,
+      "duration_ms": 218.59,
       "summary": "ONNX inference on 75 test samples: 100.0% accuracy in 3.5ms total",
       "error": null,
       "details": {
@@ -17,35 +17,35 @@
     {
       "name": "distilgpt2 explainer (text generation)",
       "status": "pass",
-      "duration_ms": 13388.37,
-      "summary": "Generated 4 explanations in 4436ms (avg 1109ms each)",
+      "duration_ms": 13817.42,
+      "summary": "Generated 4 explanations in 4930ms (avg 1232ms each)",
       "error": null,
       "details": {
         "generations": [
           {
             "prompt": "Features: {\"num_changed_symbols\": 5, \"num_callers_affected\": 15, \"has_removed_ex",
-            "response": "Bump: Minor"
+            "response": "[ 1.0.0.2 and 1.0.3 are now available."
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 3, \"num_callers_affected\": 0, \"has_removed_exp",
-            "response": "The following changes are added:"
+            "response": "This patch is not implemented yet."
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 2, \"num_callers_affected\": 5, \"has_removed_exp",
-            "response": "The following are the major changes to the versioning mechanism.\n\n\n1.0.0\n\n\nThe bug fixes are:\n\n1.0.0\n1.1.1.1\n1.1"
+            "response": "This is the first major release of the new features in the new release of the new features in the new release of the new features in the new release of the new features in the new release of the new f"
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 0, \"num_callers_affected\": 0, \"has_removed_exp",
-            "response": "Update 1.7.0.0.0"
+            "response": "The 'exports' section is deprecated, and is deprecated."
           }
         ],
-        "total_ms": 4435.644149780273
+        "total_ms": 4929.952621459961
       }
     },
     {
       "name": "axomo_bump end-to-end (preview)",
       "status": "pass",
-      "duration_ms": 47.53,
+      "duration_ms": 50.27,
       "summary": "axomo_bump preview: detected 15 files to bump to 2.0.0",
       "error": null,
       "details": {
@@ -57,14 +57,13 @@
     {
       "name": "axomo_wtf_demo (full pipeline)",
       "status": "pass",
-      "duration_ms": 11795.92,
-      "summary": "bump=MAJOR @ 100.0%, 4 sec, 5 edge, 22 callers, 10 failing tests, 3 gen tests, total=1.68s",
+      "duration_ms": 13570.05,
+      "summary": "bump=MAJOR @ 100.0%, 4 sec, 5 edge, 22 callers, 10 failing tests, 3 gen tests, total=1.89s",
       "error": null,
       "details": {
         "sections": [
           "BUMP DECISION",
           "NARRATIVE",
-          "DISTILGPT2 ALSO WROTE",
           "SECURITY SMOKES",
           "FORGOTTEN EDGE CASES",
           "BLAST RADIUS",
@@ -78,9 +77,33 @@
         "blast_radius": 22,
         "predicted_failing_tests": 10,
         "generated_tests": 3,
-        "total_seconds": 1.68
+        "total_seconds": 1.89
+      }
+    },
+    {
+      "name": "axovb CLI (info/list/eval)",
+      "status": "pass",
+      "duration_ms": 3424.71,
+      "summary": "axovb CLI: info=OK, list=15 files in 9 ecosystems, eval=100.0% accuracy",
+      "error": null,
+      "details": {
+        "info_has_bumper": true,
+        "info_has_explainer": true,
+        "list_files_detected": 15,
+        "list_ecosystems": [
+          "DOTNET",
+          "ELIXIR",
+          "GO",
+          "HELM",
+          "META",
+          "NODE",
+          "PLAIN",
+          "PYTHON",
+          "RUST"
+        ],
+        "eval_accuracy_pct": 100.0
       }
     }
   ],
-  "summary": "4/4 tests passed"
+  "summary": "5/5 tests passed"
 }
