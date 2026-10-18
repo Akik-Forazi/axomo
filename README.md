@@ -87,12 +87,13 @@ MIT © 2026 Akik Faraji — Fraziym Tech & AI
 
 ## Model Architecture (PEAK)
 
-### 1. Bump Classifier — BumpMLP (2.8M params, ONNX)
+### 1. SemVerdict (BumpMLP) — Release Impact Classifier (2.8M params, ONNX)
 - Architecture: 20 → 2048 → 1024 → 512 → 256 → 4
 - Input: 20 structured features from axodex (num_changed_symbols, has_removed_exports, blast_radius, etc.)
 - Output: {patch, minor, major, none} + calibrated confidence
-- Inference: 0.48ms via onnxruntime-node
-- Trained on 67 REAL samples (chalk, tslib, zod, yup) + 10K augmented
+- Inference: 0.96ms p50 single-request · 0.08ms/sample amortized batch-128 (CPU, measured 2026-10-18 — see benchmark-axovb.md)
+- Benchmark 2026-10-18: 98.67% accuracy, 0 misses on minor/major, deterministic & batch-invariant
+- Trained on 425 samples (real + augmented; test set: 75 samples)
 
 ### 2. Explainer — distilgpt2 (82M, ONNX, few-shot)
 - Pre-trained distilgpt2 loaded via @huggingface/transformers

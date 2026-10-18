@@ -48,3 +48,15 @@ axotest-*/data/_clones/
 *.tmp
 *.bak
 .cache/
+.env
+
+# Axodex (generated index and agent context; regenerate with `axodex analyze`)
+.axodex/
+.agents/
+.claude/
+AGENTS.md
+CLAUDE.md
+
+# Local scratch / generated
+.zwork/
+*.log

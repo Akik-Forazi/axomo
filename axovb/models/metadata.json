@@ -1,4 +1,5 @@
 {
+  "display_name": "SemVerdict",
   "feature_names": [
     "num_changed_symbols",
     "num_callers_affected",
@@ -77,7 +78,7 @@
     "2": "minor",
     "3": "major"
   },
-  "temperature": -20.053762435913086,
+  "temperature": 1.0,
   "model_type": "bump_mlp_onnx",
   "input_shape": [
     1,

@@ -102,6 +102,7 @@ def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2lab
     import json
     with open(os.path.join(output_dir, "metadata.json"), 'w') as f:
         json.dump({
+            "display_name": "SemVerdict",
             "feature_names": feature_names,
             "feature_min": X_min.tolist(),
             "feature_max": X_max.tolist(),
@@ -275,16 +276,25 @@ def main():
         y_test, test_pred, average="weighted", zero_division=0)
     cm = confusion_matrix(y_test, test_pred, labels=[0, 1, 2, 3])
 
-    # Temperature scaling for calibrated confidence
-    temperature = torch.ones(1, requires_grad=True)
-    temp_optimizer = torch.optim.LBFGS([temperature], lr=0.1, max_iter=50)
+    # Temperature scaling for calibrated confidence (Guo et al. 2017)
+    # Optimize log-T so T stays strictly positive; a raw unconstrained LBFGS
+    # fit can diverge to negative T (bug v0.3.0: T=-20 flattened all probs).
+    log_T = torch.zeros(1, requires_grad=True)  # T = exp(log_T) -> starts at 1.0
+    temp_optimizer = torch.optim.LBFGS([log_T], lr=0.05, max_iter=50)
     def temp_closure():
         temp_optimizer.zero_grad()
-        scaled = torch.FloatTensor(test_probs) / temperature
+        T = torch.exp(log_T)
+        scaled = torch.FloatTensor(test_probs) / T
         loss = criterion(scaled, y_test_t)
         loss.backward()
         return loss
     temp_optimizer.step(temp_closure)
+    with torch.no_grad():
+        T_fit = float(torch.exp(log_T).item())
+        probs_t = torch.FloatTensor(test_probs)
+        nll_fit = float(criterion(probs_t / T_fit, y_test_t).item())
+        nll_base = float(criterion(probs_t, y_test_t).item())
+        temperature_value = T_fit if (0.05 <= T_fit <= 20.0 and nll_fit < nll_base) else 1.0
 
     print(f"\n── PEAK MLP Final Evaluation ──────────────────")
     print(f"  Accuracy:    {acc*100:.1f}%")
@@ -293,7 +303,7 @@ def main():
     print(f"  Recall:     {recall*100:.1f}%")
     print(f"  Params:     {total_params:,} ({total_params/1e6:.1f}M)")
     print(f"  Model size: ~{total_params * 4 / 1024 / 1024:.1f} MB")
-    print(f"  Temperature: {temperature.item():.3f} (calibration)")
+    print(f"  Temperature: {temperature_value:.3f} (calibration)")
     print(f"\n  Confusion matrix:")
     labels = ["none", "patch", "minor", "major"]
     print(f"    {'':>8} " + " ".join(f"{n:>8}" for n in labels))
@@ -317,7 +327,7 @@ def main():
         "feature_max": X_max.tolist(),
         "label2id": LABEL2ID,
         "id2label": ID2LABEL,
-        "temperature": temperature.item(),
+        "temperature": temperature_value,
         "model_config": {
             "input_dim": len(FEATURE_NAMES),
             "hidden_sizes": [2048, 1024, 512, 256],
@@ -329,7 +339,7 @@ def main():
 
     # Export to ONNX (the correct deployment format)
     print(f"\nExporting to ONNX...")
-    export_onnx(model, args.output, FEATURE_NAMES, X_min, X_max, LABEL2ID, ID2LABEL, temperature.item())
+    export_onnx(model, args.output, FEATURE_NAMES, X_min, X_max, LABEL2ID, ID2LABEL, temperature_value)
 
     print(f"\nModel saved to {args.output}")
     print(f"  bump_mlp.pt  (PyTorch, for re-training)")
