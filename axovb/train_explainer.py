@@ -16,7 +16,7 @@ Output: " I found 5 changed symbols including removed exports..."
 The model is small (82M), runs on CPU, generates 1-3 sentences in ~100ms.
 
 Usage:
-    python train_explainer.py --data ./data/explainer_train.jsonl --output ./explainer/
+    python train_explainer.py --data ./data/explainer_train.jsonl --output ./explainer-v1-c0/
 """
 import argparse, os, sys, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))

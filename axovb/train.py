@@ -2,33 +2,43 @@
 """
 Fine-tune a PEAK MLP (2.8M params) for AXOVB — version bump classification.
 
-v3: Bigger model, more features, PEAK training techniques.
+Model class naming: a "class" (c<N>) is defined by the DATASET (and feature
+config) a checkpoint was trained on, so the same architecture can exist as
+several classes for side-by-side comparison:
+    semver-v1-c0 — legacy 100% synthetic dataset (425 samples, v2 era)
+    semver-v1-c1 — v3 dataset: real release deltas + jitter + synthetic (1,971)
+    semver-v1-c2 — v4 dataset: full-history real scrape of 37 repos + jitter
+                   + synthetic, uid-grouped split (prerelease-tag fix)
 
-Architecture: 14→2048→1024→512→256→4
-  - 2,786,052 params (2.8M) — sweet spot for structured feature classification
-  - ~10.6 MB model file
+Architecture: 20 → 2048 → 1024 → 512 → 256 → 4
+  - 2,806,020 params (2.8M) — sweet spot for structured feature classification
+  - ~10.7 MB model file
   - BatchNorm + Dropout for regularization
   - Learning rate scheduling (cosine)
-  - Early stopping
+  - Early stopping (on a validation split, never the test split)
+  - Group-aware split: samples sharing a uid (a real release pair + its
+    jitter copies) stay in the same split — no augmented-twin leakage into
+    validation (v4; data without uid falls back to row-level splits)
   - Feature importance analysis
   - Per-class metrics + confusion matrix
-  - Temperature scaling for calibrated confidence
+  - Temperature scaling calibrated on validation logits (Guo et al. 2017)
 
 Input: 20 structured features (expanded from 14)
 Output: {patch, minor, major, none} + calibrated confidence
 
 Usage:
-    python train.py --data ./data/train.jsonl --output ./model/ --epochs 100
+    python train.py --data ./data/train.jsonl --output ./semver-v1-c2 \
+        --model-name semver-v1-c2 --dataset-label "v4 real+augmented+synthetic"
 """
 import argparse, os, sys, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from utils import load_jsonl, train_test_split
+from utils import load_jsonl
 
 # Expanded from 14 → 20 features (more PEAK signal)
 FEATURE_NAMES = [
-    # Symbol-level (from axodex)
+    # Symbol-level (extracted from the git diff by axovb.analyzer)
     "num_changed_symbols",     # how many symbols changed
-    "num_callers_affected",    # blast radius (total callers)
+    "num_callers_affected",    # textual caller mentions in the diff
     "has_removed_exports",     # were exports removed?
     "has_new_exports",         # were new exports added?
     "has_exported_changes",    # any exported symbols touched?
@@ -48,7 +58,7 @@ FEATURE_NAMES = [
     # NEW v3 PEAK features
     "avg_callers_per_symbol",  # blast density
     "export_change_ratio",     # exported/total symbols changed
-    "breaking_score",           # composite: removed + signature + callers
+    "breaking_score",          # composite: removed + signature + callers
     "complexity_score",        # composite: files + symbols + callers
 ]
 
@@ -57,11 +67,12 @@ ID2LABEL = {v: k for k, v in LABEL2ID.items()}
 
 # ONNX export (the correct deployment format — not JSON)
 
-def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2label, temperature):
+def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2label,
+                temperature, model_name, dataset_label):
     """Export the trained MLP to ONNX format for onnxruntime-node."""
     import torch
     onnx_path = os.path.join(output_dir, "bump_mlp.onnx")
-    
+
     # Create a wrapper that includes normalization + temperature scaling
     class BumpMLPInference(torch.nn.Module):
         def __init__(self, mlp, X_min, X_max, temperature):
@@ -70,7 +81,7 @@ def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2lab
             self.register_buffer("X_min", torch.FloatTensor(X_min))
             self.register_buffer("X_max", torch.FloatTensor(X_max))
             self.temperature = temperature
-            
+
         def forward(self, x):
             # Normalize input
             x = (x - self.X_min) / torch.clamp(self.X_max - self.X_min, min=1.0)
@@ -81,10 +92,10 @@ def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2lab
             # Softmax
             probs = torch.softmax(logits, dim=-1)
             return probs
-    
+
     inference_model = BumpMLPInference(model, X_min, X_max, temperature)
     inference_model.eval()
-    
+
     # Export with dynamic batch size
     dummy_input = torch.randn(1, len(feature_names))
     torch.onnx.export(
@@ -97,12 +108,14 @@ def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2lab
         dynamo=False,
         opset_version=17,
     )
-    
+
     # Save metadata alongside the ONNX file
     import json
     with open(os.path.join(output_dir, "metadata.json"), 'w') as f:
         json.dump({
-            "display_name": "SemVerdict",
+            "display_name": model_name,
+            "model_class": model_name,
+            "dataset": dataset_label,
             "feature_names": feature_names,
             "feature_min": X_min.tolist(),
             "feature_max": X_max.tolist(),
@@ -113,14 +126,26 @@ def export_onnx(model, output_dir, feature_names, X_min, X_max, label2id, id2lab
             "input_shape": [1, len(feature_names)],
             "output_shape": [1, 4],
         }, f, indent=2)
-    
+
     onnx_size = os.path.getsize(onnx_path)
     print(f"\n  ONNX model: {onnx_path}")
     print(f"  ONNX size:  {onnx_size // 1024} KB ({onnx_size / 1024 / 1024:.1f} MB)")
     print(f"  Load in Node.js: const {''}= require('onnxruntime-node').InferenceSession.create(onnxPath)")
 
 # Call ONNX export after saving the PyTorch checkpoint
+def _enable_utf8_console():
+    """Windows consoles default to cp1252, which cannot render the box-drawing
+    characters below — reconfigure to UTF-8 when supported."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
 def main():
+    _enable_utf8_console()
     parser = argparse.ArgumentParser(description="Train AXOVB PEAK MLP (2.8M params)")
     parser.add_argument("--data", required=True)
     parser.add_argument("--output", required=True)
@@ -128,12 +153,19 @@ def main():
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--patience", type=int, default=15, help="Early stopping patience")
+    parser.add_argument("--model-name", default="semver-v1-c0",
+                        help="Model class name, e.g. semver-v1-c0 / semver-v1-c2 (c<N> = dataset class)")
+    parser.add_argument("--dataset-label", default="",
+                        help="Human-readable dataset description recorded in metadata.json")
     args = parser.parse_args()
 
     import torch
     import torch.nn as nn
     import numpy as np
     from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
+
+    # Reproducibility
+    torch.manual_seed(42)
 
     # Load data
     data = load_jsonl(args.data)
@@ -144,8 +176,9 @@ def main():
     for item in data:
         f = item.get("features", item)
         row = [f.get(name, 0) for name in FEATURE_NAMES]
-        # Compute derived features if missing
-        total_files = f.get("total_files", f.get("num_source_files", 0) + f.get("num_test_files", 0) + f.get("num_doc_files", 0) + f.get("num_config_files", 0))
+        if "total_files" not in f:
+            row[12] = (f.get("num_source_files", 0) + f.get("num_test_files", 0)
+                       + f.get("num_doc_files", 0) + f.get("num_config_files", 0))
         if "avg_callers_per_symbol" not in f:
             row[16] = round(f.get("num_callers_affected", 0) / max(f.get("num_changed_symbols", 1), 1), 2)
         if "export_change_ratio" not in f:
@@ -160,22 +193,50 @@ def main():
     X = np.array(X_list, dtype=np.float32)
     y = np.array([LABEL2ID.get(item["label"], 0) for item in data], dtype=np.int64)
 
-    # Normalize features (min-max scaling)
-    X_min = X.min(axis=0)
-    X_max = X.max(axis=0)
+    # Train / validation / test split (validation drives early stopping AND
+    # temperature calibration; the test split is only ever read for reporting).
+    # v4 GROUP-AWARE: samples sharing a uid (a real release pair and its jitter
+    # copies) are kept in the SAME split, so augmented twins can no longer sit
+    # in train while their source sits in val — the v3 random split made early
+    # stopping and the temperature fit optimistic. Data without uid falls back
+    # to one group per row (the previous row-level behavior).
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for i, item in enumerate(data):
+        groups[item.get("uid", f"row:{i}")].append(i)
+    group_keys = sorted(groups)
+    order = np.random.RandomState(42).permutation(len(group_keys))
+    n_test_t = int(len(data) * 0.15)
+    n_val_t = max(1, int(len(data) * 0.15))
+    test_idx, val_idx, train_idx = [], [], []
+    for gi in order:
+        idxs = groups[group_keys[gi]]
+        if len(test_idx) < n_test_t:
+            test_idx.extend(idxs)
+        elif len(val_idx) < n_val_t:
+            val_idx.extend(idxs)
+        else:
+            train_idx.extend(idxs)
+    test_idx = np.array(sorted(test_idx))
+    val_idx = np.array(sorted(val_idx))
+    train_idx = np.array(sorted(train_idx))
+
+    # Normalize features (min-max scaling) — v4: fitted on TRAIN rows only,
+    # so test/val feature ranges no longer leak into the normalizer that gets
+    # baked into the ONNX graph.
+    X_min = X[train_idx].min(axis=0)
+    X_max = X[train_idx].max(axis=0)
     X_norm = (X - X_min) / np.maximum(X_max - X_min, 1)
+    X_train, X_val, X_test = X_norm[train_idx], X_norm[val_idx], X_norm[test_idx]
+    y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
 
-    # Train/test split
-    indices = np.random.RandomState(42).permutation(len(data))
-    split = int(len(data) * 0.85)
-    train_idx, test_idx = indices[:split], indices[split:]
-    X_train, X_test = X_norm[train_idx], X_norm[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
-
-    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
+    print(f"Train: {len(X_train)}, Val: {len(X_val)}, Test: {len(X_test)}")
     from collections import Counter
+    print(f"Split groups: {len(group_keys)} unique uids "
+          f"({sum(1 for k in group_keys if len(groups[k]) > 1)} multi-row)")
     print(f"Labels (train): {Counter(y_train.tolist())}")
-    print(f"Labels (test): {Counter(y_test.tolist())}")
+    print(f"Labels (val):   {Counter(y_val.tolist())}")
+    print(f"Labels (test):  {Counter(y_test.tolist())}")
 
     # PEAK MLP Architecture
     class BumpMLP(nn.Module):
@@ -215,6 +276,8 @@ def main():
 
     X_train_t = torch.FloatTensor(X_train)
     y_train_t = torch.LongTensor(y_train)
+    X_val_t = torch.FloatTensor(X_val)
+    y_val_t = torch.LongTensor(y_val)
     X_test_t = torch.FloatTensor(X_test)
     y_test_t = torch.LongTensor(y_test)
 
@@ -222,7 +285,7 @@ def main():
     patience_counter = 0
     best_state = None
 
-    print(f"\nTraining for {args.epochs} epochs (early stopping patience={args.patience})...")
+    print(f"\nTraining for {args.epochs} epochs (early stopping patience={args.patience}, monitored on val)...")
     for epoch in range(args.epochs):
         model.train()
         perm = torch.randperm(len(X_train_t))
@@ -238,12 +301,12 @@ def main():
             total_loss += loss.item()
         scheduler.step()
 
-        # Evaluate
+        # Evaluate on validation split
         model.eval()
         with torch.no_grad():
-            test_out = model(X_test_t)
-            test_pred = test_out.argmax(dim=1)
-            acc = (test_pred == y_test_t).float().mean().item()
+            val_out = model(X_val_t)
+            val_pred = val_out.argmax(dim=1)
+            acc = (val_pred == y_val_t).float().mean().item()
 
         if acc > best_acc:
             best_acc = acc
@@ -254,7 +317,7 @@ def main():
 
         if (epoch + 1) % 10 == 0 or epoch == 0 or patience_counter == 0:
             lr = optimizer.param_groups[0]['lr']
-            print(f"  Epoch {epoch+1:>3}/{args.epochs} — loss: {total_loss:.4f}, acc: {acc*100:.1f}%, lr: {lr:.6f}{' ★' if patience_counter == 0 else ''}")
+            print(f"  Epoch {epoch+1:>3}/{args.epochs} — loss: {total_loss:.4f}, val acc: {acc*100:.1f}%, lr: {lr:.6f}{' ★' if patience_counter == 0 else ''}")
 
         if patience_counter >= args.patience:
             print(f"\n  Early stopping at epoch {epoch+1} (no improvement for {args.patience} epochs)")
@@ -264,46 +327,46 @@ def main():
     if best_state:
         model.load_state_dict(best_state)
 
-    # Final evaluation with confusion matrix
+    # Final evaluation on the internal test split with confusion matrix
     model.eval()
     with torch.no_grad():
         test_out = model(X_test_t)
         test_pred = test_out.argmax(dim=1).numpy()
-        test_probs = torch.softmax(test_out, dim=1).numpy()
 
     acc = accuracy_score(y_test, test_pred)
     precision, recall, f1, _ = precision_recall_fscore_support(
         y_test, test_pred, average="weighted", zero_division=0)
     cm = confusion_matrix(y_test, test_pred, labels=[0, 1, 2, 3])
 
-    # Temperature scaling for calibrated confidence (Guo et al. 2017)
-    # Optimize log-T so T stays strictly positive; a raw unconstrained LBFGS
-    # fit can diverge to negative T (bug v0.3.0: T=-20 flattened all probs).
+    # Temperature scaling for calibrated confidence (Guo et al. 2017).
+    # Fits T on VALIDATION logits — never the test set — and optimizes log-T
+    # so T = exp(log_T) stays strictly positive. A raw unconstrained fit once
+    # diverged to T=-20 (bug v0.3.0), which inverts the softmax ranking; the
+    # guard below falls back to T=1.0 when the fit is unsafe or unhelpful.
+    with torch.no_grad():
+        val_logits = model(X_val_t)
     log_T = torch.zeros(1, requires_grad=True)  # T = exp(log_T) -> starts at 1.0
-    temp_optimizer = torch.optim.LBFGS([log_T], lr=0.05, max_iter=50)
+    temp_optimizer = torch.optim.LBFGS([log_T], lr=0.05, max_iter=100)
     def temp_closure():
         temp_optimizer.zero_grad()
-        T = torch.exp(log_T)
-        scaled = torch.FloatTensor(test_probs) / T
-        loss = criterion(scaled, y_test_t)
+        loss = criterion(val_logits / torch.exp(log_T), y_val_t)
         loss.backward()
         return loss
     temp_optimizer.step(temp_closure)
     with torch.no_grad():
         T_fit = float(torch.exp(log_T).item())
-        probs_t = torch.FloatTensor(test_probs)
-        nll_fit = float(criterion(probs_t / T_fit, y_test_t).item())
-        nll_base = float(criterion(probs_t, y_test_t).item())
+        nll_fit = float(criterion(val_logits / T_fit, y_val_t).item())
+        nll_base = float(criterion(val_logits, y_val_t).item())
         temperature_value = T_fit if (0.05 <= T_fit <= 20.0 and nll_fit < nll_base) else 1.0
 
-    print(f"\n── PEAK MLP Final Evaluation ──────────────────")
+    print(f"\n── PEAK MLP Final Evaluation (internal test split) ──")
     print(f"  Accuracy:    {acc*100:.1f}%")
     print(f"  F1 (wtd):    {f1*100:.1f}%")
     print(f"  Precision:  {precision*100:.1f}%")
     print(f"  Recall:     {recall*100:.1f}%")
     print(f"  Params:     {total_params:,} ({total_params/1e6:.1f}M)")
     print(f"  Model size: ~{total_params * 4 / 1024 / 1024:.1f} MB")
-    print(f"  Temperature: {temperature_value:.3f} (calibration)")
+    print(f"  Temperature: {temperature_value:.3f} (calibrated on val logits)")
     print(f"\n  Confusion matrix:")
     labels = ["none", "patch", "minor", "major"]
     print(f"    {'':>8} " + " ".join(f"{n:>8}" for n in labels))
@@ -328,6 +391,8 @@ def main():
         "label2id": LABEL2ID,
         "id2label": ID2LABEL,
         "temperature": temperature_value,
+        "model_class": args.model_name,
+        "dataset": args.dataset_label,
         "model_config": {
             "input_dim": len(FEATURE_NAMES),
             "hidden_sizes": [2048, 1024, 512, 256],
@@ -339,14 +404,13 @@ def main():
 
     # Export to ONNX (the correct deployment format)
     print(f"\nExporting to ONNX...")
-    export_onnx(model, args.output, FEATURE_NAMES, X_min, X_max, LABEL2ID, ID2LABEL, temperature_value)
+    export_onnx(model, args.output, FEATURE_NAMES, X_min, X_max, LABEL2ID, ID2LABEL,
+                temperature_value, args.model_name, args.dataset_label)
 
     print(f"\nModel saved to {args.output}")
     print(f"  bump_mlp.pt  (PyTorch, for re-training)")
     print(f"  bump_mlp.onnx (ONNX, for onnxruntime-node inference)")
-    print(f"  metadata.json (feature names, normalizer, labels)")
+    print(f"  metadata.json (model class, feature names, normalizer, labels)")
 
 if __name__ == "__main__":
     main()
-
-

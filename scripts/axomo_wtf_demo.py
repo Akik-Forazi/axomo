@@ -19,7 +19,16 @@ import argparse, os, sys, json, re, time
 from pathlib import Path
 from collections import defaultdict
 
-sys.path.insert(0, '/home/z/my-project/axomo/shared')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, os.path.join(_ROOT, 'shared'))
+
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 # ─── 1. NASTY PR FIXTURE ─────────────────────────────────────────────────
@@ -335,7 +344,8 @@ describe('removed exports regression', () => {{
 
 # ─── 3. ML INFERENCE ──────────────────────────────────────────────────────
 
-def run_bumper_mlp(features, model_dir='/home/z/my-project/axomo/axovb/models'):
+def run_bumper_mlp(features, model_dir=None):
+    model_dir = model_dir or os.path.join(_ROOT, 'axovb', 'semver-v1-c0')
     import numpy as np
     try:
         import onnxruntime as ort
@@ -364,7 +374,8 @@ def run_bumper_mlp(features, model_dir='/home/z/my-project/axomo/axovb/models'):
     return id2label[pred], conf, elapsed
 
 
-def run_explainer(features, model_dir='/home/z/my-project/axomo/axovb/explainer'):
+def run_explainer(features, model_dir=None):
+    model_dir = model_dir or os.path.join(_ROOT, 'axovb', 'explainer-v1-c0')
     try:
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM

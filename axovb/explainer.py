@@ -18,7 +18,7 @@ class Explainer:
 
     def __init__(self, model_dir: str = None):
         if model_dir is None:
-            model_dir = os.path.join(os.path.dirname(__file__), "explainer")
+            model_dir = os.path.join(os.path.dirname(__file__), "explainer-v1-c0")
         self.model_dir = model_dir
         self.config_path = os.path.join(model_dir, "config.json")
         self._tok = None

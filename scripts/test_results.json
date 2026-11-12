@@ -1,67 +1,110 @@
 {
-  "run_at": "2026-10-05T18:08:26",
-  "python": "python",
+  "run_at": "2026-10-18T18:00:59",
+  "python": "C:\\Users\\user\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
   "tests": [
     {
       "name": "PEAK MLP bumper (ONNX inference)",
-      "status": "fail",
-      "duration_ms": 376.89,
-      "summary": "",
-      "error": "FileNotFoundError: [Errno 2] No such file or directory: '/home/z/my-project/axomo/axovb/models\\\\metadata.json'",
-      "details": {}
+      "status": "pass",
+      "duration_ms": 651.11,
+      "summary": "ONNX inference on 296 test samples: 79.4% accuracy in 77.6ms total",
+      "error": null,
+      "details": {
+        "accuracy_pct": 79.4,
+        "total_inference_ms": 77.6,
+        "samples": 296
+      }
     },
     {
       "name": "distilgpt2 explainer (text generation)",
       "status": "pass",
-      "duration_ms": 20813.44,
-      "summary": "Generated 4 explanations in 6667ms (avg 1667ms each)",
+      "duration_ms": 23329.79,
+      "summary": "Generated 4 explanations in 6192ms (avg 1548ms each)",
       "error": null,
       "details": {
         "generations": [
           {
             "prompt": "Features: {\"num_changed_symbols\": 5, \"num_callers_affected\": 15, \"has_removed_ex",
-            "response": "Bump: 0.9.18.0"
+            "response": "This feature is deprecated."
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 3, \"num_callers_affected\": 0, \"has_removed_exp",
-            "response": "This is the last major feature introduced for the Bump.\n\nThis is the last major feature introduced for the Bump. This will cause the Bump.exports to be merged with the Bump.exports.\nBump."
+            "response": "-- (has_exported_exports_exports_exports_exported_exports_exports_exports_exports_exports_exports_exports_exports_exports_exports_ex"
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 2, \"num_callers_affected\": 5, \"has_removed_exp",
-            "response": "- Fix a bug where a change to the version number of packages is not added in the latest version."
+            "response": "1.8.0"
           },
           {
             "prompt": "Features: {\"num_changed_symbols\": 0, \"num_callers_affected\": 0, \"has_removed_exp",
-            "response": "This release is an experimental release, and is not yet available on the public release list."
+            "response": "This is a bugfix to the new version of the libcdb.dns.xml file, which contains a number of bug fixes."
           }
         ],
-        "total_ms": 6666.610956192017
+        "total_ms": 6192.425727844238
       }
     },
     {
       "name": "axomo_bump end-to-end (preview)",
-      "status": "fail",
-      "duration_ms": 340.95,
-      "summary": "",
-      "error": "RuntimeError: axomo_bump exit 1: Traceback (most recent call last):\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\scripts\\axomo_bump.py\", line 645, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\scripts\\axomo_bump.py\", line 618, in main\n    print(render_preview(plan, current_target, new_target, bump_kind, source,\n    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n                          confidence=confidence, features=features))\n                          ^^^^^^^^^^^^^^^^",
-      "details": {}
+      "status": "pass",
+      "duration_ms": 316.86,
+      "summary": "axomo_bump preview: detected 15 files to bump to 2.0.0",
+      "error": null,
+      "details": {
+        "files_affected": 15,
+        "target_version": "2.0.0",
+        "preview_lines": 61
+      }
     },
     {
       "name": "axomo_wtf_demo (full pipeline)",
-      "status": "fail",
-      "duration_ms": 17847.34,
-      "summary": "",
-      "error": "RuntimeError: wtf_demo exit 1: Traceback (most recent call last):\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\scripts\\axomo_wtf_demo.py\", line 607, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\scripts\\axomo_wtf_demo.py\", line 603, in main\n    print(render_report(diff, SIMULATED_REPO, no_ml=args.no_ml))\n          ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\scripts\\axomo_wtf_demo.py\", line 493, in render_report\n    total_ms = sum(timings.valu",
-      "details": {}
+      "status": "pass",
+      "duration_ms": 18050.26,
+      "summary": "bump=MAJOR @ 100.0%, 4 sec, 5 edge, 22 callers, 10 failing tests, 3 gen tests, total=2.28s",
+      "error": null,
+      "details": {
+        "sections": [
+          "BUMP DECISION",
+          "NARRATIVE",
+          "DISTILGPT2 ALSO WROTE",
+          "SECURITY SMOKES",
+          "FORGOTTEN EDGE CASES",
+          "BLAST RADIUS",
+          "PREDICTED FAILING TESTS",
+          "GENERATED TESTS"
+        ],
+        "bump_predicted": "MAJOR",
+        "confidence_pct": 100.0,
+        "security_findings": 4,
+        "edge_findings": 5,
+        "blast_radius": 22,
+        "predicted_failing_tests": 10,
+        "generated_tests": 3,
+        "total_seconds": 2.28
+      }
     },
     {
       "name": "axovb CLI (info/list/eval)",
-      "status": "fail",
-      "duration_ms": 595.97,
-      "summary": "",
-      "error": "RuntimeError: axovb info exit 1: Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\axovb\\__main__.py\", line 6, in <module>\n    main()\n    ~~~~^^\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\axovb\\cli.py\", line 410, in main\n    args.func(args)\n    ~~~~~~~~~^^^^^^\n  File \"C:\\Users\\user\\akik\\programing\\axomo\\axovb\\cli.py\", line 270, in cmd_info\n    print(f\"\\n  {BOLD}\\u2550\\u2550 AXOVB INFO \\u2550\\u25",
-      "details": {}
+      "status": "pass",
+      "duration_ms": 4062.56,
+      "summary": "axovb CLI: info=OK, list=15 files in 9 ecosystems, eval=79.4% accuracy",
+      "error": null,
+      "details": {
+        "info_has_bumper": true,
+        "info_has_explainer": true,
+        "list_files_detected": 15,
+        "list_ecosystems": [
+          "DOTNET",
+          "ELIXIR",
+          "GO",
+          "HELM",
+          "META",
+          "NODE",
+          "PLAIN",
+          "PYTHON",
+          "RUST"
+        ],
+        "eval_accuracy_pct": 79.4
+      }
     }
   ],
-  "summary": "1/5 tests passed"
+  "summary": "5/5 tests passed"
 }

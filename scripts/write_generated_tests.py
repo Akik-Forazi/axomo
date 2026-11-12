@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Write the generated test files to disk so users can paste them."""
 import os, sys
-sys.path.insert(0, '/home/z/my-project/axomo/scripts')
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_ROOT, 'scripts'))
 from axomo_wtf_demo import NASTY_PR, SIMULATED_REPO, extract_diff_features, scan_security, scan_edge_cases, generate_tests
 
 features, removed_lines, added_lines = extract_diff_features(NASTY_PR)
@@ -9,7 +10,7 @@ sec_findings = scan_security(NASTY_PR)
 edge_findings = scan_edge_cases(NASTY_PR, removed_lines)
 generated = generate_tests(removed_lines, edge_findings, sec_findings)
 
-out_dir = '/home/z/my-project/axomo/download/generated_tests'
+out_dir = os.path.join(_ROOT, 'download', 'generated_tests')
 os.makedirs(out_dir, exist_ok=True)
 for g in generated:
     p = os.path.join(out_dir, os.path.basename(g['path']))

@@ -12,8 +12,17 @@ Tests run:
 import json, os, sys, time, subprocess, tempfile, shutil
 from pathlib import Path
 
-ROOT = Path('C:/Users/user/akik/programing/axomo')
-PYTHON = 'python'
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+ROOT = Path(__file__).resolve().parent.parent
+# Use the interpreter that launched this runner (run it with py -3.14 so the
+# subprocesses inherit torch/onnxruntime availability)
+PYTHON = sys.executable
 
 results = {
     "run_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -59,14 +68,16 @@ def test_bumper_onnx():
     acc = float(m.group(1)) if m else 0
     m2 = re.search(r'Total time:\s+([\d.]+)ms', out)
     infer_ms = float(m2.group(1)) if m2 else 0
-    summary = f"ONNX inference on 75 test samples: {acc:.1f}% accuracy in {infer_ms:.1f}ms total"
-    return summary, {"accuracy_pct": acc, "total_inference_ms": infer_ms, "samples": 75}
+    m3 = re.search(r'Samples:\s+(\d+)', out)
+    n = int(m3.group(1)) if m3 else 0
+    summary = f"ONNX inference on {n} test samples: {acc:.1f}% accuracy in {infer_ms:.1f}ms total"
+    return summary, {"accuracy_pct": acc, "total_inference_ms": infer_ms, "samples": n}
 
 
 def test_explainer():
     from transformers import AutoTokenizer, AutoModelForCausalLM
     import torch
-    model_dir = str(ROOT / 'axovb' / 'explainer')
+    model_dir = str(ROOT / 'axovb' / 'explainer-v1-c0')
     assert os.path.exists(os.path.join(model_dir, 'config.json')), "explainer model not found"
     tok = AutoTokenizer.from_pretrained(model_dir)
     model = AutoModelForCausalLM.from_pretrained(model_dir)
@@ -99,7 +110,7 @@ def test_axomo_bump():
     r = subprocess.run(
         [PYTHON, str(ROOT / 'scripts' / 'axomo_bump.py'),
          '--root', str(demo), '--major', '--preview', '--yes'],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
     )
     if r.returncode != 0:
         raise RuntimeError(f"axomo_bump exit {r.returncode}: {r.stderr[:500]}")
@@ -116,7 +127,7 @@ def test_axomo_bump():
 def test_wtf_demo():
     r = subprocess.run(
         [PYTHON, str(ROOT / 'scripts' / 'axomo_wtf_demo.py')],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if r.returncode != 0:
         raise RuntimeError(f"wtf_demo exit {r.returncode}: {r.stderr[:500]}")
@@ -160,7 +171,7 @@ def test_axovb_cli():
     # Test 1: axovb info
     r = subprocess.run(
         [PYTHON, "-m", "axovb", "info"],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+        cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
     )
     if r.returncode != 0:
         raise RuntimeError(f"axovb info exit {r.returncode}: {r.stderr[:500]}")
@@ -171,7 +182,7 @@ def test_axovb_cli():
     # Test 2: axovb list on demo-monorepo
     r2 = subprocess.run(
         [PYTHON, "-m", "axovb", "list", "--root", str(ROOT / "demo-monorepo")],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+        cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
     )
     if r2.returncode != 0:
         raise RuntimeError(f"axovb list exit {r2.returncode}: {r2.stderr[:500]}")
@@ -184,7 +195,7 @@ def test_axovb_cli():
     # Test 3: axovb eval
     r3 = subprocess.run(
         [PYTHON, "-m", "axovb", "eval"],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=60,
+        cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if r3.returncode != 0:
         raise RuntimeError(f"axovb eval exit {r3.returncode}: {r3.stderr[:500]}")

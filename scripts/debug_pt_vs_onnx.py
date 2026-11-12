@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Debug: load .pt model directly, run inference, compare with ONNX output."""
 import os, sys, json
-sys.path.insert(0, '/home/z/my-project/axomo/shared')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, os.path.join(_ROOT, 'shared'))
 from utils import load_jsonl
 import numpy as np
 import torch
 
 # Load .pt checkpoint
-ckpt = torch.load('/home/z/my-project/axomo/axovb/models/bump_mlp.pt', map_location='cpu', weights_only=False)
+ckpt = torch.load(os.path.join(_ROOT, 'axovb', 'semver-v1-c0', 'bump_mlp.pt'), map_location='cpu', weights_only=False)
 feature_names = ckpt['feature_names']
 X_min = np.array(ckpt['feature_min'], dtype=np.float32)
 X_max = np.array(ckpt['feature_max'], dtype=np.float32)
@@ -42,7 +44,7 @@ model.load_state_dict(ckpt['model_state'])
 model.eval()
 
 # Load test data + extract features (same logic as verify_onnx.py)
-data = load_jsonl('/home/z/my-project/axomo/axovb/data/test.jsonl')
+data = load_jsonl(os.path.join(_ROOT, 'axovb', 'data', 'test.jsonl'))
 LABEL2ID = {"none": 0, "patch": 1, "minor": 2, "major": 3}
 ID2LABEL = {v: k for k, v in LABEL2ID.items()}
 
@@ -93,7 +95,7 @@ print(f"  Sample 0 probs: {probs_pt[0]}")
 # Now run ONNX with RAW features (not normalized)
 print(f"\n=== ONNX with RAW features ===")
 import onnxruntime as ort
-sess = ort.InferenceSession('/home/z/my-project/axomo/axovb/models/bump_mlp.onnx')
+sess = ort.InferenceSession(os.path.join(_ROOT, 'axovb', 'semver-v1-c0', 'bump_mlp.onnx'))
 input_name = sess.get_inputs()[0].name
 output_name = sess.get_outputs()[0].name
 probs_onnx_raw = sess.run([output_name], {input_name: X})[0]

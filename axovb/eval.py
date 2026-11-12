@@ -46,6 +46,7 @@ def evaluate_on_test_set(model_dir: str, data_path: str):
     print(f"  Loading ONNX model from {model_dir}...")
     predictor = BumpPredictor(model_dir)
     info = predictor.info()
+    print(f"    model class:   {info.get('model_class')}")
     print(f"    feature count: {info['feature_count']}")
     print(f"    labels:        {info['labels']}")
     print(f"    onnx size:     {info['onnx_size_kb']} KB")
@@ -131,7 +132,7 @@ def evaluate_on_test_set(model_dir: str, data_path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="AXOVB eval — evaluate the trained ONNX model on the test set")
-    parser.add_argument("--model-dir", default=os.path.join(os.path.dirname(__file__), "models"))
+    parser.add_argument("--model-dir", default=os.path.join(os.path.dirname(__file__), "semver-v1-c0"))
     parser.add_argument("--data", default=os.path.join(os.path.dirname(__file__), "data", "test.jsonl"))
     args = parser.parse_args()
     evaluate_on_test_set(args.model_dir, args.data)

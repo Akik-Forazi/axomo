@@ -26,6 +26,7 @@ from typing import Optional, Dict, List
 # Make axovb package importable when invoked via `python -m axovb`
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from axovb import __version__
 from axovb.predictor import BumpPredictor
 from axovb.explainer import Explainer
 from axovb.bumper import find_version_files, bump_version, apply_plan, git_commit_and_tag
@@ -257,7 +258,7 @@ def cmd_eval(args):
     """Evaluate the trained ONNX model on the held-out test set."""
     from axovb.eval import evaluate_on_test_set
     evaluate_on_test_set(
-        model_dir=args.model_dir or os.path.join(os.path.dirname(__file__), "models"),
+        model_dir=args.model_dir or os.path.join(os.path.dirname(__file__), "semver-v1-c0"),
         data_path=args.data or os.path.join(os.path.dirname(__file__), "data", "test.jsonl"),
     )
 
@@ -269,31 +270,37 @@ def cmd_info(args):
     axovb_dir = Path(__file__).parent
     print(f"\n  {BOLD}══ AXOVB INFO ══{RESET}")
     print(f"  {DIM}{'─' * 60}{RESET}")
-    print(f"  version:    0.3.0")
+    print(f"  version:    {__version__}")
     print(f"  package:    {axovb_dir}")
     print()
 
-    # Bumper MLP
-    models_dir = axovb_dir / "models"
-    print(f"  {CYAN}{BOLD}BUMPER MLP (PEAK, ONNX){RESET}")
-    if models_dir.exists():
+    # Bumper MLP — one directory per model class (c<N> = dataset class)
+    print(f"  {CYAN}{BOLD}BUMPER MLP (PEAK, ONNX) — model classes{RESET}")
+    class_dirs = sorted(p for p in axovb_dir.glob("semver-v1-*") if p.is_dir())
+    if not class_dirs:
+        print(f"    {YELLOW}not trained — run `python axovb/train.py` first{RESET}")
+    for models_dir in class_dirs:
+        print(f"\n  {BOLD}{models_dir.name}/{RESET}")
+        if "backup" in models_dir.name:
+            print(f"    {DIM}archive — pre-rename artifact metadata, do not deploy{RESET}")
         for f in sorted(models_dir.iterdir()):
             if f.is_file():
                 size_kb = f.stat().st_size // 1024
                 print(f"    {f.name:<25} {size_kb:>8} KB")
-        # Try to load + show accuracy
+        # Try to load + show model class + calibration
         try:
             pred = BumpPredictor(str(models_dir))
             info = pred.info()
+            print(f"    model class:             {info['model_class']}")
+            print(f"    dataset:                 {info.get('dataset') or '-'}")
+            print(f"    temperature:             {info.get('temperature')}")
             print(f"    feature count:           {info['feature_count']}")
             print(f"    labels:                  {info['labels']}")
         except Exception as e:
             print(f"    {RED}load failed: {e}{RESET}")
-    else:
-        print(f"    {YELLOW}not trained — run `python axovb/train.py` first{RESET}")
 
     # Explainer
-    expl_dir = axovb_dir / "explainer"
+    expl_dir = axovb_dir / "explainer-v1-c0"
     print(f"\n  {CYAN}{BOLD}EXPLAINER (distilgpt2, 82M){RESET}")
     if expl_dir.exists() and (expl_dir / "config.json").exists():
         for f in sorted(expl_dir.iterdir()):
@@ -312,7 +319,7 @@ def cmd_info(args):
             print(f"    train time:              {m.get('train_time_seconds', 0):.1f}s")
             print(f"    peak train loss:         {m.get('peak_train_loss', '?')}")
             print(f"    final train loss:       {m.get('final_train_loss', '?')}")
-            print(f"    final eval perplexity:  {m.get('final_eval_loss', '?')}")
+            print(f"    final eval loss:        {m.get('final_eval_loss', '?')}")
     else:
         print(f"    {YELLOW}not trained — run `python scripts/train_explainer_lomem.py` first{RESET}")
     print()
@@ -344,6 +351,13 @@ def cmd_list(args):
 # ─── CLI DISPATCHER ─────────────────────────────────────────────────────
 
 def main():
+    # Windows consoles default to cp1252 — the box-drawing output below needs UTF-8
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
     parser = argparse.ArgumentParser(
         prog="axovb",
         description="AXOVB — AI-powered semantic version bumper (PEAK MLP + distilgpt2 explainer)",

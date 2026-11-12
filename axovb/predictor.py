@@ -32,20 +32,24 @@ class BumpPredictor:
 
     def __init__(self, model_dir: str = None):
         if model_dir is None:
-            model_dir = os.path.join(os.path.dirname(__file__), "models")
+            # Default to the deployed class. Other classes ship side by side,
+            # e.g. semver-v1-c1 (v3 dataset, better real-world accuracy) —
+            # pass model_dir explicitly to load them.
+            model_dir = os.path.join(os.path.dirname(__file__), "semver-v1-c0")
         self.model_dir = model_dir
         self.onnx_path = os.path.join(model_dir, "bump_mlp.onnx")
         self.meta_path = os.path.join(model_dir, "metadata.json")
         if not os.path.exists(self.onnx_path):
             raise FileNotFoundError(
                 f"ONNX model not found at {self.onnx_path}. "
-                f"Run `python axovb/train.py --data axovb/data/train.jsonl --output axovb/models/` first."
+                f"Run `python axovb/train.py --data axovb/data/train.jsonl --output axovb/semver-v1-c0/` first."
             )
         if not os.path.exists(self.meta_path):
             raise FileNotFoundError(f"metadata.json not found at {self.meta_path}")
 
         with open(self.meta_path) as f:
             self.meta = json.load(f)
+        self.model_class = self.meta.get("model_class", self.meta.get("display_name", "unknown"))
         self.feature_names = self.meta["feature_names"]
         self.X_min = np.array(self.meta["feature_min"], dtype=np.float32)
         self.X_max = np.array(self.meta["feature_max"], dtype=np.float32)
@@ -70,6 +74,9 @@ class BumpPredictor:
             [[features.get(n, 0) for n in self.feature_names]],
             dtype=np.float32,
         )
+        # Guard non-finite inputs: one NaN/Inf feature would otherwise poison
+        # every output probability (verified in benchmark.py robustness suite).
+        x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
         # IMPORTANT: pass RAW features — the BumpMLPInference ONNX wrapper
         # normalizes input internally. Pre-normalizing here would double-normalize.
         probs = self.sess.run([self.output_name], {self.input_name: x})[0]
@@ -91,6 +98,7 @@ class BumpPredictor:
             [[fd.get(n, 0) for n in self.feature_names] for fd in feature_dicts],
             dtype=np.float32,
         )
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         probs = self.sess.run([self.output_name], {self.input_name: X})[0]
         preds = probs.argmax(axis=1)
         results = []
@@ -103,6 +111,9 @@ class BumpPredictor:
         return {
             "onnx_path": self.onnx_path,
             "onnx_size_kb": os.path.getsize(self.onnx_path) // 1024,
+            "model_class": self.model_class,
+            "dataset": self.meta.get("dataset", ""),
+            "temperature": self.meta.get("temperature"),
             "feature_count": len(self.feature_names),
             "feature_names": self.feature_names,
             "labels": [self.id2label[i] for i in range(len(self.id2label))],

@@ -7,6 +7,14 @@ distilgpt2 explainer (82M params) generates a natural-language narrative
 of why the bump is needed. Project-wide version files are then edited
 atomically across 8 ecosystems with git commit + tag.
 
+Model classes: a class (c<N>) is the DATASET (and feature config) a
+checkpoint was trained on, so one architecture can ship several classes
+side by side:
+    semver-v1-c0        — legacy 100% synthetic dataset (425 samples)
+    semver-v1-c1        — v3 real + augmented + synthetic dataset (1,971)
+    semver-v1-c0-backup — archive copy of the original c0 artifacts
+    explainer-v1-c0     — distilgpt2 narrative explainer
+
 Package layout:
     axovb/
     ├── __init__.py        — package metadata + version
@@ -17,14 +25,17 @@ Package layout:
     ├── predictor.py       — ONNX inference wrapper for the PEAK MLP
     ├── explainer.py       — distilgpt2 narrative generation
     ├── eval.py            — model evaluation on held-out test set (ONNX-based)
+    ├── benchmark.py       — latency/calibration/robustness benchmark suite
     ├── train.py           — train the PEAK MLP + export ONNX
     ├── train_explainer.py — train the distilgpt2 explainer (legacy, full-memory)
     ├── prepare_data.py    — parse bumper training data from cloned repos
     ├── prepare_explainer_data.py — parse explainer training data (synthetic)
     ├── model_config.json  — describes the deployed model artifacts
     ├── data/              — parsed training data (.jsonl, preserved)
-    ├── models/            — trained ONNX + .pt + metadata.json
-    └── explainer/         — trained distilgpt2 (safetensors gitignored — regenerable)
+    ├── semver-v1-c0/      — deployed class: ONNX + .pt + metadata.json
+    ├── semver-v1-c1/      — v3 data class (better real-world accuracy)
+    ├── semver-v1-c0-backup/ — archive of the pre-rename c0 artifacts
+    └── explainer-v1-c0/   — trained distilgpt2 (safetensors gitignored — regenerable)
 
 Quick start:
     # Show what version files exist in the current repo
@@ -45,5 +56,5 @@ Quick start:
     # Show model artifacts + their sizes
     python -m axovb info
 """
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = ["__version__"]

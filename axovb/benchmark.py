@@ -4,13 +4,15 @@ AXOVB benchmark — performance, accuracy, calibration and robustness suite
 for the ONNX bump classifier.
 
 Goes beyond eval.py: single-request latency percentiles, batched throughput,
-expected calibration error (ECE), robustness to out-of-distribution inputs,
-determinism checks, cold-load time, and (with --compare-head) an old-vs-new
-comparison against the model currently at HEAD (pre temperature-scaling fix).
+expected calibration error (ECE) on FOUR held-out datasets (v3 combined, real
+repos, synthetic-v2, legacy synthetic), robustness to out-of-distribution
+inputs, determinism checks, cold-load time, and (with --compare-baseline) an
+old-vs-new comparison against the shipped-but-broken v0.3.0 artifact
+(T=-20.05, 0% accuracy) pinned at commit 0291f55.
 
 Usage:
     python axovb/benchmark.py
-    python axovb/benchmark.py --compare-head          # also bench HEAD model
+    python axovb/benchmark.py --compare-baseline      # also bench the v0.3.0 baseline
     python axovb/benchmark.py --iters 1000 --batches 8,32,128
 """
 import argparse, hashlib, json, os, subprocess, sys, tempfile, time
@@ -25,8 +27,22 @@ sys.path.insert(0, os.path.join(REPO_ROOT, "shared"))
 from axovb.predictor import BumpPredictor          # noqa: E402
 from utils import load_jsonl                        # noqa: E402
 
-MODELS_DIR = os.path.join(REPO_ROOT, "axovb", "models")
-DATA_PATH = os.path.join(REPO_ROOT, "axovb", "data", "test.jsonl")
+MODELS_DIR = os.path.join(REPO_ROOT, "axovb", "semver-v1-c0")   # deployed class
+DATA_DIR = os.path.join(REPO_ROOT, "axovb", "data")
+DATA_PATH = os.path.join(DATA_DIR, "test.jsonl")
+
+# The v0.3.0 baseline lived at axovb/models/ at this commit (renamed since);
+# pinned by SHA so the comparison stays reproducible forever.
+BASELINE_COMMIT = "0291f55"
+BASELINE_MODELS_PATH = "axovb/models"
+
+# Every held-out set available (name -> file); labelless/OOD sets excluded.
+TEST_SETS = {
+    "v3 combined (296)": "test.jsonl",
+    "real repos (46)": "test-real.jsonl",
+    "synthetic-v2 (250)": "test-synthetic-v2.jsonl",
+    "legacy synthetic (75)": "legacy-test-synthetic.jsonl",
+}
 
 
 def section(title):
@@ -82,8 +98,8 @@ def ece(confidences, correct, n_bins=10):
     return e, rows
 
 
-def run_suite(predictor, tag):
-    data = load_jsonl(DATA_PATH)
+def run_suite(predictor, tag, data_path=None):
+    data = load_jsonl(data_path or DATA_PATH)
     X, y_true = extract_test_matrix(predictor, data)
 
     # ---- Accuracy ------------------------------------------------------
@@ -125,6 +141,30 @@ def run_suite(predictor, tag):
     for lo, hi, n, ac, a, gap in rows:
         print(f"       {lo:.1f}  {hi:.1f}  {n:>5}   {ac*100:6.2f}%  {a*100:6.2f}%  {gap*100:6.2f}%")
     return {"acc": acc, "ece": e, "mean_conf": conf.mean(), "probs": probs}
+
+
+def dataset_matrix(predictor, tag):
+    """Accuracy + ECE across every held-out dataset (honesty over cherry-picking)."""
+    section(f"DATASET MATRIX — {tag}")
+    print(f"  {'dataset':<24} {'n':>5}  {'accuracy':>9}  {'ECE':>7}  {'mean conf':>9}")
+    results = {}
+    for name, fname in TEST_SETS.items():
+        path = os.path.join(DATA_DIR, fname)
+        if not os.path.exists(path):
+            print(f"  {name:<24}   (missing: {fname})")
+            continue
+        data = load_jsonl(path)
+        X, y_true = extract_test_matrix(predictor, data)
+        probs = predictor.sess.run([predictor.output_name], {predictor.input_name: X})[0]
+        preds = probs.argmax(axis=1)
+        correct = preds == y_true
+        conf = probs.max(axis=1)
+        e, _ = ece(conf, correct)
+        results[name] = {"acc": float(correct.mean()), "ece": float(e),
+                         "mean_conf": float(conf.mean())}
+        print(f"  {name:<24} {len(y_true):>5}  {correct.mean()*100:>8.2f}%  "
+              f"{e*100:>6.2f}%  {conf.mean()*100:>8.2f}%")
+    return results
 
 
 def perf_suite(predictor, tag, iters, batch_sizes):
@@ -183,14 +223,20 @@ def robustness_suite(predictor, tag):
         print(f"  [{status}] {name:<28} finite={finite} sum(p)=1: {sum_ok} "
               f"(min {sums.min():.6f} max {sums.max():.6f}) argmax classes={sorted(argmaxes)}")
 
-    # NaN / Inf inputs
+    # NaN / Inf inputs. The raw session propagates non-finite values; the
+    # public BumpPredictor API sanitizes them (np.nan_to_num) — both checked.
     Xnan = np.zeros((1, 20), dtype=np.float32); Xnan[0, 0] = np.nan
     Xinf = np.zeros((1, 20), dtype=np.float32); Xinf[0, 0] = np.inf
     for name, X in (("NaN input", Xnan), ("Inf input", Xinf)):
         out = predictor.sess.run([predictor.output_name], {predictor.input_name: X})[0]
         finite = np.isfinite(out).all()
-        print(f"  [note] {name:<28} finite_output={finite} "
-              f"({'model returns NaN for NaN/Inf — caller must sanitize input' if not finite else 'fine'})")
+        print(f"  [note] {name:<28} raw finite_output={finite} "
+              f"({'raw session propagates NaN — API guard applies' if not finite else 'fine'})")
+    label, conf, probs = predictor.predict_features(
+        {k: float("nan") for k in predictor.feature_names})
+    guarded = np.isfinite(probs).all()
+    print(f"  [{'OK ' if guarded else 'BAD'}] all-NaN via predict_features   -> {label} "
+          f"conf={conf*100:5.1f}%  finite probs={guarded} (nan_to_num guard)")
 
     # Determinism
     X = (meta_min + (meta_max - meta_min) * 0.37)[None, :].astype(np.float32)
@@ -250,12 +296,14 @@ def model_identity(model_dir, tag):
     print(f"  cold-load time: {load_ms:.1f} ms (session creation)")
 
 
-def extract_head_model():
-    """Materialize HEAD's bump_mlp.onnx + metadata.json into a temp dir."""
-    out = tempfile.mkdtemp(prefix="axovb_head_")
+def extract_baseline_model():
+    """Materialize the v0.3.0 baseline (bump_mlp.onnx + metadata.json) from the
+    pinned commit into a temp dir. The path was axovb/models/ back then; the
+    working tree has since been renamed to axovb/semver-v1-c0/."""
+    out = tempfile.mkdtemp(prefix="axovb_baseline_")
     for name in ("bump_mlp.onnx", "metadata.json"):
         blob = subprocess.run(
-            ["git", "-C", REPO_ROOT, "show", f"HEAD:axovb/models/{name}"],
+            ["git", "-C", REPO_ROOT, "show", f"{BASELINE_COMMIT}:{BASELINE_MODELS_PATH}/{name}"],
             check=True, capture_output=True,
         ).stdout
         with open(os.path.join(out, name), "wb") as f:
@@ -267,7 +315,9 @@ def main():
     ap = argparse.ArgumentParser(description="AXOVB ONNX benchmark suite")
     ap.add_argument("--iters", type=int, default=3000, help="single-request latency iterations")
     ap.add_argument("--batches", type=str, default="1,8,32,128,512", help="comma list of batch sizes")
-    ap.add_argument("--compare-head", action="store_true", help="also benchmark the model at git HEAD")
+    ap.add_argument("--compare-baseline", "--compare-head", action="store_true",
+                    dest="compare_baseline",
+                    help="also benchmark the shipped v0.3.0 artifact pinned at commit " + BASELINE_COMMIT)
     ap.add_argument("--model-dir", default=MODELS_DIR)
     args = ap.parse_args()
     batch_sizes = [int(b) for b in args.batches.split(",") if b.strip()]
@@ -279,25 +329,37 @@ def main():
     model_identity(args.model_dir, "working tree")
     p_new = BumpPredictor(args.model_dir)
     res_new = run_suite(p_new, "working tree")
+    mat_new = dataset_matrix(p_new, "working tree")
     perf_suite(p_new, "working tree", args.iters, batch_sizes)
     robustness_suite(p_new, "working tree")
     end_to_end_smoke(p_new)
+    same_argmax = None
 
-    if args.compare_head:
-        head_dir = extract_head_model()
-        model_identity(head_dir, "git HEAD (pre-fix)")
-        p_old = BumpPredictor(head_dir)
-        res_old = run_suite(p_old, "git HEAD (pre-fix)")
+    if args.compare_baseline:
+        base_dir = extract_baseline_model()
+        model_identity(base_dir, f"v0.3.0 baseline @ {BASELINE_COMMIT}")
+        p_old = BumpPredictor(base_dir)
+        res_old = run_suite(p_old, f"v0.3.0 baseline @ {BASELINE_COMMIT}")
+        mat_old = dataset_matrix(p_old, f"v0.3.0 baseline @ {BASELINE_COMMIT}")
 
         # Head-to-head on identical inputs
         data = load_jsonl(DATA_PATH)
         X, y_true = extract_test_matrix(p_new, data)
         same_argmax = (res_old["probs"].argmax(axis=1) == res_new["probs"].argmax(axis=1)).mean()
-        print(f"\n{'=' * 62}\n  HEAD vs WORKING TREE (identical inputs, n={len(y_true)})\n{'=' * 62}")
-        print(f"  accuracy      : {res_old['acc']*100:.2f}%  ->  {res_new['acc']*100:.2f}%")
-        print(f"  ECE           : {res_old['ece']*100:.2f}%  ->  {res_new['ece']*100:.2f}%")
-        print(f"  mean conf     : {res_old['mean_conf']*100:.2f}%  ->  {res_new['mean_conf']*100:.2f}%")
-        print(f"  argmax agrees : {same_argmax*100:.1f}% of test samples")
+        print(f"\n{'=' * 62}\n  BASELINE ({BASELINE_COMMIT}) vs WORKING TREE (identical inputs)\n{'=' * 62}")
+        print(f"  {'dataset':<24} {'n':>5}  {'baseline':>9}  {'working':>9}")
+        for name, fname in TEST_SETS.items():
+            if name in mat_old and name in mat_new:
+                n = len(load_jsonl(os.path.join(DATA_DIR, fname)))
+                print(f"  {name:<24} {n:>5}  {mat_old[name]['acc']*100:>8.2f}%  {mat_new[name]['acc']*100:>8.2f}%")
+        print(f"  {'':<24} {'':>5}  {'ECE':>9}  {'ECE':>9}")
+        for name in TEST_SETS:
+            if name in mat_old and name in mat_new:
+                print(f"  {name:<24} {'':>5}  {mat_old[name]['ece']*100:>8.2f}%  {mat_new[name]['ece']*100:>8.2f}%")
+        print(f"\n  v3 combined: accuracy {res_old['acc']*100:.2f}%  ->  {res_new['acc']*100:.2f}%   "
+              f"ECE {res_old['ece']*100:.2f}%  ->  {res_new['ece']*100:.2f}%")
+        print(f"  mean conf  : {res_old['mean_conf']*100:.2f}%  ->  {res_new['mean_conf']*100:.2f}%")
+        print(f"  argmax agrees: {same_argmax*100:.1f}% of test samples")
 
     print("\nDONE.")
 

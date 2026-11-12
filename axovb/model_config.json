@@ -1,50 +1,115 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "package": "axovb",
+  "naming": {
+    "scheme": "<task>-v<semver>-c<N>",
+    "rule": "A class (c<N>) is defined by the DATASET (and feature config) a checkpoint was trained on. One architecture ships as several classes side by side; N is assigned in dataset order.",
+    "known_classes": {
+      "c0": "legacy 100% synthetic bump dataset (425 samples, v2 era)",
+      "c1": "v3 bump dataset: real release deltas + jitter + synthetic (1,971 samples)"
+    }
+  },
   "bumper_classifier": {
-    "name": "PEAK MLP",
+    "name": "AXOVB bumper (PEAK MLP)",
     "type": "onnx",
-    "model_file": "models/bump_mlp.onnx",
-    "pytorch_checkpoint": "models/bump_mlp.pt",
-    "metadata": "models/metadata.json",
+    "architecture": "20 -> 2048 -> 1024 -> 512 -> 256 -> 4 (BatchNorm + Dropout(0.3) + ReLU)",
     "params": 2806020,
     "params_human": "2.8M",
     "size_mb": 10.7,
-    "architecture": "20 -> 2048 -> 1024 -> 512 -> 256 -> 4 (BatchNorm + Dropout(0.3) + ReLU)",
-    "training": {
-      "epochs": 80,
-      "early_stopping_patience": 15,
-      "batch_size": 32,
-      "optimizer": "AdamW (lr=5e-4, weight_decay=0.01)",
-      "scheduler": "CosineAnnealingLR",
-      "train_samples": 425,
-      "test_samples": 75,
-      "train_accuracy_pct": 100.0,
-      "test_accuracy_pct": 100.0,
-      "temperature_calibration": 0.086
-    },
-    "inference_ms": 0.05,
-    "inference_throughput_samples_per_sec": 21770,
-    "input": "20_structured_features (extracted from git diff)",
-    "output": "4_class_probabilities [none, patch, minor, major]",
+    "input": "20_structured_features (regex-extracted from the git diff by axovb/analyzer.py)",
+    "output": "4_class_probabilities [none, patch, minor, major] + calibrated confidence",
     "feature_names": [
       "num_changed_symbols", "num_callers_affected", "has_removed_exports", "has_new_exports",
       "has_exported_changes", "has_signature_changes", "has_type_changes", "has_rename",
       "num_source_files", "num_test_files", "num_doc_files", "num_config_files",
       "total_files", "test_to_source_ratio", "blast_radius", "change_scope",
       "avg_callers_per_symbol", "export_change_ratio", "breaking_score", "complexity_score"
-    ]
+    ],
+    "default_class": "semver-v1-c0",
+    "classes": {
+      "semver-v1-c0": {
+        "role": "deployed default",
+        "model_dir": "semver-v1-c0/",
+        "model_file": "semver-v1-c0/bump_mlp.onnx",
+        "pytorch_checkpoint": "semver-v1-c0/bump_mlp.pt",
+        "metadata": "semver-v1-c0/metadata.json",
+        "onnx_sha256_prefix": "beb0c455d9c5",
+        "dataset": "legacy: 100% synthetic 425 (v2 era, zero-filled v3 features)",
+        "training": {
+          "split_train_val_test": "308 / 54 / 63",
+          "early_stopped_epoch": 19,
+          "internal_test_accuracy_pct": 100.0,
+          "temperature": 0.110,
+          "temperature_fit": "val logits, log_T parameterization, sanity-guarded (Guo et al. 2017)"
+        },
+        "heldout_accuracy_pct": {
+          "legacy_synthetic_75": 100.0,
+          "synthetic_v2_250": 88.0,
+          "v3_combined_296": 79.39,
+          "real_repos_46": 32.61
+        },
+        "note": "Excellent on its legacy distribution; poor on real repos — kept for compatibility. Use semver-v1-c1 for real-world diffs."
+      },
+      "semver-v1-c1": {
+        "role": "recommended for real repos",
+        "model_dir": "semver-v1-c1/",
+        "model_file": "semver-v1-c1/bump_mlp.onnx",
+        "pytorch_checkpoint": "semver-v1-c1/bump_mlp.pt",
+        "metadata": "semver-v1-c1/metadata.json",
+        "onnx_sha256_prefix": "3976b6bcbeb1",
+        "dataset": "v3: real release deltas + jitter + synthetic (1,971)",
+        "training": {
+          "split_train_val_test": "1425 / 251 / 295",
+          "early_stopped_epoch": 28,
+          "val_peak_accuracy_pct": 92.8,
+          "internal_test_accuracy_pct": 88.1,
+          "temperature": 0.835,
+          "temperature_fit": "val logits, log_T parameterization, sanity-guarded (Guo et al. 2017)"
+        },
+        "heldout_accuracy_pct": {
+          "v3_combined_296": 93.24,
+          "real_repos_46": 78.26,
+          "synthetic_v2_250": 96.0,
+          "legacy_synthetic_75": 97.33
+        },
+        "heldout_ece_pct": {
+          "v3_combined_296": 2.59,
+          "real_repos_46": 15.04,
+          "synthetic_v2_250": 1.72,
+          "legacy_synthetic_75": 3.92
+        },
+        "note": "Best real-world accuracy in the portfolio. Nothing is promoted automatically — pass --model-dir or switch the default deliberately."
+      },
+      "semver-v1-c0-backup": {
+        "role": "archive",
+        "model_dir": "semver-v1-c0-backup/",
+        "note": "Byte-identical copy of the pre-rename c0 artifacts (temperature 0.086 era), kept for archaeology. Do not deploy."
+      }
+    },
+    "inference": {
+      "p50_ms_single_request": { "semver-v1-c0": 0.79, "semver-v1-c1": 1.14 },
+      "throughput_samples_per_sec_batch128": { "semver-v1-c0": 6102, "semver-v1-c1": 3714 },
+      "cold_load_ms": { "semver-v1-c0": 59.0, "semver-v1-c1": 53.3 },
+      "note": "CPU, onnxruntime 1.30.0, measured 2026-10-18; run-to-run variance ~2x on a shared dev machine"
+    },
+    "robustness": {
+      "nan_inf_guard": "BumpPredictor.predict_features / predict_batch apply np.nan_to_num (raw session still propagates NaN — do not bypass the wrapper)",
+      "deterministic": true,
+      "batch_invariant": true,
+      "pt_onnx_max_diff": { "semver-v1-c0": 4.2e-07, "semver-v1-c1": 2.1e-07 }
+    }
   },
   "explainer": {
-    "name": "distilgpt2 (fine-tuned)",
+    "class": "explainer-v1-c0",
+    "name": "distilgpt2 (fine-tuned, undertrained)",
     "type": "pytorch",
     "base_model": "distilgpt2",
-    "model_dir": "explainer/",
-    "config_file": "explainer/config.json",
-    "weights_file": "explainer/model.safetensors (gitignored — regenerable via scripts/train_explainer_lomem.py)",
-    "tokenizer_file": "explainer/tokenizer.json",
-    "metrics_file": "explainer/training_metrics.json",
-    "samples_file": "explainer/sample_generations.json",
+    "model_dir": "explainer-v1-c0/",
+    "config_file": "explainer-v1-c0/config.json",
+    "weights_file": "explainer-v1-c0/model.safetensors (gitignored — regenerable via scripts/train_explainer_lomem.py)",
+    "tokenizer_file": "explainer-v1-c0/tokenizer.json",
+    "metrics_file": "explainer-v1-c0/training_metrics.json",
+    "samples_file": "explainer-v1-c0/sample_generations.json",
     "params": 81912576,
     "params_human": "82M",
     "size_mb": 312,
@@ -60,23 +125,26 @@
       "train_time_seconds": 68,
       "peak_train_loss": 2.556,
       "final_train_loss": 0.899,
-      "peak_eval_loss": 1.618,
       "final_eval_loss": 0.763,
-      "peak_perplexity": 5.04,
       "final_perplexity": 2.15
     },
+    "quality_caveat": "1 epoch / 180 samples — output is formulaic. The rule-based principal-engineer narrative remains the primary report text; the ML generation is shown with an explicit undertrained caveat. Retrain 5+ epochs on the full 1,700-sample set to make the ML narrative authoritative.",
     "inference_ms_warm": 1100,
     "input": "structured features + predicted bump type",
     "output": "natural language explanation (1-3 sentences)",
     "fallback": "rule-based principal-engineer narrative (always coherent)"
   },
   "data_artifacts": {
-    "bumper_train": "data/train.jsonl (425 samples, 160 KB)",
-    "bumper_test": "data/test.jsonl (75 samples, 32 KB)",
-    "explainer_train": "data/explainer_train.jsonl (1700 samples, 1.5 MB)",
-    "explainer_test": "data/explainer_test.jsonl (300 samples, 272 KB)",
+    "bumper_train_v3": "data/train.jsonl (1971 samples — 172 release + 1200 synthetic + 514 jitter + 85 docs-only)",
+    "bumper_test_v3": "data/test.jsonl (296 samples — 250 synthetic-v2 + 46 real)",
+    "bumper_test_real": "data/test-real.jsonl (46 samples — axios 9 / nanoid 20 / zod 17)",
+    "bumper_test_synthetic_v2": "data/test-synthetic-v2.jsonl (250 samples)",
+    "bumper_train_legacy": "data/legacy-train-synthetic.jsonl (425 samples — all synthetic)",
+    "bumper_test_legacy": "data/legacy-test-synthetic.jsonl (75 samples — all synthetic)",
+    "explainer_train": "data/explainer_train.jsonl (1700 samples)",
+    "explainer_test": "data/explainer_test.jsonl (300 samples)",
     "regenerable": false,
-    "note": "These .jsonl files are the parsed training data. Do NOT re-parse — they are preserved in the git repo so the models can be retrained from them at any time."
+    "note": "These .jsonl files are the parsed training data. Do NOT re-parse — they are preserved in the git repo so every model class can be retrained from them at any time."
   },
   "supported_ecosystems": [
     "node (package.json + lerna.json + workspace packages)",
@@ -95,6 +163,7 @@
     "examples": [
       "python -m axovb predict",
       "python -m axovb predict --diff pr.patch --explain",
+      "python -m axovb predict --model-dir axovb/semver-v1-c1",
       "python -m axovb apply --major --commit --tag",
       "python -m axovb apply --to 3.0.0 --commit --tag --push",
       "python -m axovb auto --commit --tag",

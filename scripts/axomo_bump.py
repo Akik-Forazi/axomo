@@ -26,6 +26,13 @@ import argparse, os, sys, json, re, shutil, subprocess, time, tempfile
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
+for _s in (sys.stdout, sys.stderr):
+    if hasattr(_s, "reconfigure"):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 
 def parse_json_version(path: Path) -> Optional[str]:
     try:
@@ -333,7 +340,7 @@ def bump_version(current: str, kind: str) -> str:
 
 
 def predict_bump_from_diff(diff: str):
-    sys.path.insert(0, '/home/z/my-project/axomo/scripts')
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from axomo_wtf_demo import extract_diff_features
     features, _, _ = extract_diff_features(diff)
     FEATURE_NAMES = [
@@ -349,7 +356,7 @@ def predict_bump_from_diff(diff: str):
         import onnxruntime as ort
     except ImportError:
         return None, None, feature_vec
-    model_dir = '/home/z/my-project/axomo/axovb/models'
+    model_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'axovb', 'semver-v1-c0')
     onnx_path = os.path.join(model_dir, 'bump_mlp.onnx')
     meta_path = os.path.join(model_dir, 'metadata.json')
     if not (os.path.exists(onnx_path) and os.path.exists(meta_path)):

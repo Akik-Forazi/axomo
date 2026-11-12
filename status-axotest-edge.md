@@ -58,7 +58,7 @@ TypeError: unhashable type: 'list'
 1. （可选，1 行修复）shared/utils.py:48 对 list 型标签先展平或跳过，否则 prep/统计类脚本仍会在收尾崩溃（axotest-security、axotest-unit 的 prep.log 同为 untracked，疑似同一 bug 受害者，待查）。
 2. `python axotest-edge/train.py --data axotest-edge/data/train.jsonl --output axotest-edge/model`（产出 model/，含 checkpoint-*）。
 3. `python axotest-edge/eval.py --model axotest-edge/model --data axotest-edge/data/test.jsonl`。
-4. `python shared/export_onnx.py --model axotest-edge/model --output axotest-edge/model-onnx/ --task token-classification`，产物进 onnx/（与 axovb/models 的既有模式对齐）。
+4. `python shared/export_onnx.py --model axotest-edge/model --output axotest-edge/model-onnx/ --task token-classification`，产物进 onnx/（与 axovb/semver-v1-c0 的既有模式对齐）。
 
 ## 证据等级
 - 一手代码：axotest-edge/{prepare_data,train,eval}.py、shared/utils.py:48、.gitignore、git status/log —— 最高等级。

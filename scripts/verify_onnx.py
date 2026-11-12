@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Verify ONNX inference for the trained bumper MLP."""
 import os, sys, json, time
-sys.path.insert(0, '/home/z/my-project/axomo/shared')
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+sys.path.insert(0, os.path.join(_ROOT, 'shared'))
 from utils import load_jsonl
 import numpy as np
 
 def main():
-    model_dir = '/home/z/my-project/axomo/axovb/models'
-    data_path = '/home/z/my-project/axomo/axovb/data/test.jsonl'
+    for _s in (sys.stdout, sys.stderr):
+        if hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+    model_dir = os.path.join(_ROOT, 'axovb', 'semver-v1-c0')
+    data_path = os.path.join(_ROOT, 'axovb', 'data', 'test.jsonl')
 
     import onnxruntime as ort
 

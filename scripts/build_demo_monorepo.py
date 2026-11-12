@@ -3,7 +3,7 @@
 import os, subprocess, sys
 from pathlib import Path
 
-ROOT = Path('/home/z/my-project/axomo/demo-monorepo')
+ROOT = Path(__file__).resolve().parent.parent / 'demo-monorepo'
 
 
 def main():

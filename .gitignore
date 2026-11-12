@@ -2,9 +2,9 @@
 
 # Large model weights — too big for GitHub (>100MB)
 # Regenerable from axovb/data/*.jsonl + scripts/train_explainer_lomem.py
-axovb/explainer/model.safetensors
-axovb/explainer/model.bin
-axovb/explainer/pytorch_model.bin
+axovb/explainer*/model.safetensors
+axovb/explainer*/model.bin
+axovb/explainer*/pytorch_model.bin
 
 # Nested demo repo's own .git directory
 demo-monorepo/.git/

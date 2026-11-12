@@ -58,12 +58,22 @@ python -m axovb info
 | **plain** | `VERSION` |
 | **meta** | `CHANGELOG.md` (prepends new release section, doesn't replace) |
 
-## Trained models
+## Model classes
 
-| Model | Params | Size | Accuracy | Inference | File |
+A class (`c<N>`) is defined by the DATASET a checkpoint was trained on; one architecture ships
+as several classes side by side (`<task>-v<semver>-c<N>`).
+
+| Class | Params | Size | Held-out v3 (296) | Real repos (46) | ECE (v3) | File |
+|---|---|---|---|---|---|---|
+| `semver-v1-c0` *(deployed default)* | 2.8M | 10.7 MB | 79.4% | **32.6%** | 19.5% | `semver-v1-c0/bump_mlp.onnx` |
+| `semver-v1-c1` *(recommended for real repos)* | 2.8M | 10.7 MB | **93.2%** | **78.3%** | **2.6%** | `semver-v1-c1/bump_mlp.onnx` |
+| `semver-v1-c0-backup` | — | — | archive of the pre-rename c0 bytes | | | `semver-v1-c0-backup/` |
+
+Switch classes with `--model-dir axovb/semver-v1-c1`. Nothing is promoted automatically.
+
+| Explainer | Params | Size | Quality | Inference | File |
 |---|---|---|---|---|---|
-| PEAK MLP bumper | 2.8M | 10.7 MB | 100% (test) | 0.05 ms/sample | `models/bump_mlp.onnx` |
-| distilgpt2 explainer | 82M | 312 MB (gitignored) | ppl 2.15 | ~1.1 s/sample | `explainer/model.safetensors` |
+| `explainer-v1-c0` (distilgpt2) | 82M | 312 MB (gitignored) | undertrained (1 epoch / 180 samples) — rule-based narrative stays primary | ~1.1 s/sample | `explainer-v1-c0/model.safetensors` |
 
 The `model.safetensors` (312 MB) exceeds GitHub's 100 MB file limit, so it's gitignored.
 It's regenerable from `data/explainer_train.jsonl` (1.5 MB, preserved) using:
@@ -71,7 +81,7 @@ It's regenerable from `data/explainer_train.jsonl` (1.5 MB, preserved) using:
 ```bash
 python scripts/train_explainer_lomem.py \
   --data axovb/data/explainer_train.jsonl \
-  --output axovb/explainer/ \
+  --output axovb/explainer-v1-c0/ \
   --epochs 1 --batch-size 2 --grad-accum 8 --max-length 64 --limit 200
 ```
 
@@ -107,12 +117,17 @@ The PEAK MLP takes a 20-feature vector extracted from the git diff:
 The ONNX export wraps the MLP in a `BumpMLPInference` module that:
 1. Normalizes input: `(x - X_min) / max(X_max - X_min, 1)`
 2. Forwards through the MLP
-3. Applies temperature scaling (calibration, learned during training)
+3. Applies temperature scaling — `T = exp(log_T)` fitted on **validation logits**
+   (Guo et al. 2017), guarded to `0.05 ≤ T ≤ 20` and rejected if it doesn't
+   improve val NLL (fallback T=1.0). The shipped v0.3.0 artifact baked in a
+   **T=-20.05** that inverted the softmax ranking and scored ~0% — never fit
+   temperature in raw log space or on the test set.
 4. Softmax
 
 **Important**: callers must pass RAW features (not pre-normalized). The wrapper
 handles normalization internally — pre-normalizing would double-normalize and
-produce garbage predictions (0% accuracy).
+produce garbage predictions (0% accuracy). `BumpPredictor` also applies an
+`np.nan_to_num` guard so one NaN/Inf feature can't poison the output.
 
 ## The distilgpt2 explainer
 
@@ -141,15 +156,18 @@ axovb/
 ├── prepare_explainer_data.py — parse explainer training data (synthetic)
 ├── model_config.json  — describes the deployed model artifacts
 ├── data/              — parsed training data (.jsonl, preserved — DO NOT re-parse)
-│   ├── train.jsonl             (425 samples — bumper)
-│   ├── test.jsonl               (75 samples — bumper)
-│   ├── explainer_train.jsonl    (1700 samples — explainer)
-│   └── explainer_test.jsonl     (300 samples — explainer)
-├── models/            — trained ONNX + .pt + metadata.json
-│   ├── bump_mlp.onnx           (10.7 MB)
-│   ├── bump_mlp.pt             (10.7 MB — PyTorch checkpoint)
-│   └── metadata.json           (feature names, normalizer, label map, temperature)
-└── explainer/         — trained distilgpt2 (safetensors gitignored — regenerable)
+│   ├── train.jsonl                 (1971 — v3: real 172 + synthetic 1200 + jitter 514 + docs 85)
+│   ├── test.jsonl                  (296 — 250 synthetic-v2 + 46 real)
+│   ├── test-real.jsonl             (46 — axios 9 / nanoid 20 / zod 17)
+│   ├── test-synthetic-v2.jsonl     (250)
+│   ├── legacy-train-synthetic.jsonl (425 — the c0 class dataset)
+│   ├── legacy-test-synthetic.jsonl  (75)
+│   ├── explainer_train.jsonl       (1700 — explainer)
+│   └── explainer_test.jsonl        (300 — explainer)
+├── semver-v1-c0/      — deployed default class (ONNX + .pt + metadata.json)
+├── semver-v1-c1/      — v3 dataset class — recommended for real repos
+├── semver-v1-c0-backup/ — archive of the original pre-rename c0 bytes
+└── explainer-v1-c0/   — trained distilgpt2 (safetensors gitignored — regenerable)
     ├── config.json
     ├── tokenizer.json
     ├── training_metrics.json
@@ -157,17 +175,30 @@ axovb/
     └── model.safetensors         (312 MB — gitignored, regenerable)
 ```
 
+Each model class directory contains `bump_mlp.onnx` (10.7 MB), `bump_mlp.pt` (PyTorch
+checkpoint) and `metadata.json` (feature names, normalizer, label map, temperature, class name).
+
 ## Retraining from the preserved data
 
 ```bash
-# Bumper: retrain from data/train.jsonl
-python axovb/train.py --data axovb/data/train.jsonl --output axovb/models/ --epochs 80
+# Bumper class c1 (v3 dataset, recommended): retrain from data/train.jsonl
+python axovb/train.py --data axovb/data/train.jsonl \
+  --output axovb/semver-v1-c1 --model-name semver-v1-c1 \
+  --dataset-label "v3: real release deltas + jitter + synthetic (1971)"
+
+# Bumper class c0 (legacy dataset, deployed default)
+python axovb/train.py --data axovb/data/legacy-train-synthetic.jsonl \
+  --output axovb/semver-v1-c0 --model-name semver-v1-c0 \
+  --dataset-label "legacy: 100% synthetic 425 (v2 era)"
 
 # Explainer: retrain from data/explainer_train.jsonl (regenerates model.safetensors)
 python scripts/train_explainer_lomem.py \
   --data axovb/data/explainer_train.jsonl \
-  --output axovb/explainer/ \
-  --epochs 1 --batch-size 2 --grad-accum 8 --max-length 64 --limit 200
+  --output axovb/explainer-v1-c0/ \
+  --epochs 5 --batch-size 2 --grad-accum 8 --max-length 64
+
+# Full benchmark suite (latency, ECE, robustness, baseline comparison)
+python axovb/benchmark.py --compare-baseline
 
 # Verify everything still passes
 python scripts/run_all_tests.py
